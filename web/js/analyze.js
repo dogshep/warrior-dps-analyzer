@@ -109,6 +109,7 @@ function uptime(auras, re, f) {
 // warrior for 15s ends a pull), and DPS, downtime and the sim all use the pulls instead of the walk between them.
 const LONG_FIGHT_MS = 6 * 60 * 1000;
 const PULL_GAP_MS = 15000;
+const MAX_SIM_SECONDS = 300;
 
 export function splitPulls(dmg, fight) {
   const pulls = [];
@@ -159,7 +160,9 @@ export function analyzeFight(parser, guid, fight, names) {
   // For a run: the typical pull, by time spent, is what the sim fights.
   const targetCount = pulls ? Math.max(1, Math.min(5, Math.round(sum(pulls.map(pl => countTargets(pl.targets, pl.dmg) * (pl.end - pl.start))) / (dur * 1000))))
     : countTargets(perTarget, total);
-  const simDur = pulls ? Math.min(300, Math.max(20, median(pulls.map(pl => (pl.end - pl.start) / 1000)))) : dur;
+  // The sim always fights one general fight of at most 5 minutes (a typical pull on a run), never the whole
+  // log; its numbers are scaled to your time in combat. That keeps a run to seconds.
+  const simDur = Math.min(MAX_SIM_SECONDS, pulls ? Math.max(20, median(pulls.map(pl => (pl.end - pl.start) / 1000))) : dur);
 
   // Execute phase start: first time the main target was under 20% health, else the last 20% of the fight.
   let executeStart = fight.start + (fight.end - fight.start) * 0.8, executeKnown = false;
