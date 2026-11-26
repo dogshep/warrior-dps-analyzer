@@ -19,12 +19,23 @@ const data = (async () => {
 // One worker, created on first use, so the 6 MB sim only downloads when someone analyzes a fight.
 let worker, nextId = 0;
 const pending = new Map();
-function sim(request) {
+function sim(request, onProgress) {
   if (!worker) {
     worker = new Worker('js/sim-worker.js');
-    worker.onmessage = ({ data: m }) => { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(m.error)) : p.resolve(m.result); };
+    worker.onmessage = ({ data: m }) => {
+      const p = pending.get(m.id);
+      if (!p) return;
+      if (m.progress) { p.onProgress && p.onProgress(m.progress); return; }
+      pending.delete(m.id);
+      m.error ? p.reject(new Error(m.error)) : p.resolve(m.result);
+    };
   }
-  return new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); worker.postMessage({ id, request }); });
+  return new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject, onProgress }); worker.postMessage({ id, request }); });
+}
+
+// The progress bar under "Try this next run": label plus a 0..1 fill.
+function showProgress(label, done) {
+  $("tips").innerHTML = `<li class="d prog">${esc(label)}<div class="bar"><span style="width:${Math.round(done * 100)}%"></span></div></li>`;
 }
 
 // The loaded source: a parsed log file, or a Warcraft Logs report whose fights load on demand.
@@ -73,16 +84,18 @@ async function analyze() {
   $('out').hidden = false;
   renderStats(a, null);
   renderTables(a, names);
-  $('tips').innerHTML = '<li class="d">Running the sim on your gear…</li>';
+  showProgress('Starting the sim…', 0);
   $('go').disabled = true;
   try {
     const cons = detectConsumes(a, parser, names);
-    const [mine, best] = await Promise.all([
-      sim(buildRequest(a, parser, names, apls, opts)),
-      sim(buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' })),
-    ]);
-    const s = compareToSim(mine, names, iterations);
-    const ideal = compareToSim(best, names, iterations);
+    // Two runs, one after the other: your setup, then the same with full consumables. The bar covers both.
+    const step = (run, label) => ({ stage, done }) => stage === 'download'
+      ? showProgress(`Downloading the sim (first run only)… ${Math.round(done * 100)}%`, done)
+      : showProgress(`${label}… ${Math.round(((run + done) / 2) * 100)}%`, (run + done) / 2);
+    const mine = await sim(buildRequest(a, parser, names, apls, opts), step(0, `Simming your gear (${iterations} fights)`));
+    const best = await sim(buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' }), step(1, 'Simming with full consumables'));
+    const s = compareToSim(mine, names, mine.iterations || iterations);
+    const ideal = compareToSim(best, names, best.iterations || iterations);
     ideal.missing = missingConsumes(cons.found);
     renderStats(a, s);
     renderTips(suggestions(a, s, ideal, aplSpellNames(apls[a.preset], names)));

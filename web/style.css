@@ -41,3 +41,4 @@ footer { padding: 20px 16px 40px; font-size: 13px; }
 .row.inline { flex-wrap: nowrap; align-items: center; }
 .row.inline input { flex: 1; min-width: 0; }
 .row.inline .primary { margin-top: 0; }
+.tips li.prog { list-style: none; margin-left: -22px; }
