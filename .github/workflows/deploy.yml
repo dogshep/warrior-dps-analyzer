@@ -56,7 +56,7 @@ jobs:
       - name: Build the sim
         run: WOWSIMS_DIR=.wowsims SKIP_FETCH=1 scripts/build-sim.sh
       - name: Smoke test (parse the sample log and sim it)
-        run: node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
+        run: node tests/cooldowns_test.mjs && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

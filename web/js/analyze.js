@@ -87,6 +87,8 @@ const DEBUFF_RULES = [
   [/Annihilator|Armor Shatter/, d => (d.armorShatter = true)],
 ];
 
+import { cooldownReport, cooldownTips } from './cooldowns.js';
+
 const inFight = (f, t) => t >= f.start && t <= f.end;
 const sum = a => a.reduce((s, x) => s + x, 0);
 const fmt = n => Math.round(n).toLocaleString('en-US');
@@ -190,8 +192,11 @@ export function analyzeFight(parser, guid, fight, names) {
   const twoHand = mh && names.items[mh.id]?.[4] === 4;
   const preset = spec === 'arms' ? 'arms' : twoHand ? 'fury_2h' : 'fury';
 
+  const pullSpans = pulls && pulls.map(pl => ({ start: pl.start, end: pl.end, targets: countTargets(pl.targets, pl.dmg) }));
+  const cooldowns = cooldownReport(p, fight, { pulls: pullSpans, dps: total / dur, dur, executeStart, executeKnown, targetCount });
+
   return {
-    names, guid, name: parser.names.get(guid), fight, dur, simDur, isRun, pulls: pulls ? pulls.length : null, pullStarts: pulls ? pulls.map(pl => pl.start) : null, total, dps: total / dur,
+    names, guid, cooldowns, pullSpans, name: parser.names.get(guid), fight, dur, simDur, isRun, pulls: pulls ? pulls.length : null, pullStarts: pulls ? pulls.map(pl => pl.start) : null, total, dps: total / dur,
     abilities: [...byAbility.values()].sort((a, b) => b.damage - a.damage),
     casts, dmg, misses, targetCount, mainTarget, executeStart, executeKnown,
     rageCapped: capped, idleSec: idle / 1000, died: deathT !== undefined, deathAt: deathT ? (deathT - fight.start) / 1000 : null,
@@ -269,33 +274,6 @@ export function detectConsumes(a, parser, names) {
   return { spec, found };
 }
 
-// Cooldown checks that hold for any warrior build. Each returns a suggestion with an estimated DPS cost.
-function cooldownChecks(a, simCasts) {
-  const out = [];
-  const count = n => a.casts.filter(c => c.name === n).length;
-  const cds = [
-    ['Death Wish', 180, 'Use Death Wish on pull and again every 3 minutes, lined up with trinkets and potions.', true],
-    ['Recklessness', 1800, 'Recklessness is a free burst window. Use it on bosses, ideally at the end with Death Wish.'],
-    ['Bloodrage', 60, 'Bloodrage is free rage on a 1 minute cooldown. Use it whenever you are not rage capped.'],
-    ['Blood Fury', 120, 'Use Blood Fury on cooldown, together with Death Wish.'],
-    ['Berserking', 180, 'Use Berserking with your other cooldowns.'],
-  ];
-  for (const [name, cd, tip, talent] of cds) {
-    const used = count(name);
-    // A talent cooldown counts only if the player used it at least once: the log does not say which talents they have.
-    if (talent ? used === 0 : used === 0 && !(simCasts?.get(name) > 0)) continue;
-    // Uses possible: on a dungeon run, one per pull start once the cooldown is back; otherwise every `cd` seconds.
-    let possible;
-    if (a.pullStarts) {
-      possible = 0;
-      let ready = -Infinity;
-      for (const t of a.pullStarts) if (t >= ready) { possible++; ready = t + cd * 1000; }
-    } else possible = Math.floor(a.dur / cd) + 1;
-    if (used < possible) out.push({ kind: 'cooldown', title: `Use ${name} more (${used} of ${possible} possible)`, detail: tip, gain: null });
-  }
-  return out;
-}
-
 // Compares your casts per minute to the sim's for each ability, and prices the gap with your own damage per cast.
 // Action metrics are summed over all iterations, so `iterations` turns them into per-fight numbers.
 export function compareToSim(simResult, names, iterations) {
@@ -367,7 +345,7 @@ export function suggestions(a, sim, ideal, castable) {
     }
   }
 
-  out.push(...cooldownChecks(a, simCasts));
+  out.push(...cooldownTips(a.cooldowns || [], a.fight, a));
 
   if (a.uptimes.battleShout < 0.9) out.push({ kind: 'buff', title: `Keep Battle Shout up (only ${Math.round(a.uptimes.battleShout * 100)}% uptime)`, detail: 'Refresh it before it drops; it is a lot of attack power for one global cooldown.', gain: null });
   if (a.rageCapped !== null && a.rageCapped > 0.08) out.push({ kind: 'rage', title: `You sat at 90+ rage ${Math.round(a.rageCapped * 100)}% of the fight`, detail: 'Capped rage is wasted. Queue Heroic Strike (or Cleave on packs) when you are above 60 rage.', gain: null });

@@ -42,3 +42,16 @@ footer { padding: 20px 16px 40px; font-size: 13px; }
 .row.inline input { flex: 1; min-width: 0; }
 .row.inline .primary { margin-top: 0; }
 .tips li.prog { list-style: none; margin-left: -22px; }
+.cds { display:grid; grid-template-columns: 170px 1fr; gap: 10px 12px; align-items:center; font-size: 14px; }
+.cds .lbl b { display:block; font-weight:600; }
+.cds .lbl span { color: var(--muted); font-size: 12px; }
+.track { position:relative; height: 22px; background:#0003; border-radius:4px; overflow:hidden; }
+.track i { position:absolute; top:0; bottom:0; }
+.track .pull { background:#ffffff10; }
+.track .exec { background:#c7802f22; border-left:1px dashed var(--accent); }
+.track .idle { background: repeating-linear-gradient(135deg, #d9644a55 0 4px, transparent 4px 8px); }
+.track .use { top:4px; bottom:4px; background: var(--accent); border-radius:3px; min-width:3px; }
+.axis { grid-column: 2; display:flex; justify-content:space-between; color: var(--muted); font-size: 12px; margin-top:-6px; }
+.legend { display:flex; flex-wrap:wrap; gap: 6px 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.legend i { display:inline-block; width:14px; height:10px; border-radius:2px; vertical-align:-1px; margin-right:5px; }
+@media (max-width: 560px) { .cds { grid-template-columns: 1fr; gap: 4px; } .cds .track { margin-bottom: 8px; } .axis { grid-column: 1; } }
