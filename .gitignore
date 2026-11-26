@@ -1,3 +1,5 @@
 .wowsims/
 web/sim/
 node_modules/
+worker/.wrangler/
+worker/deploy.log

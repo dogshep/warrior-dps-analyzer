@@ -186,7 +186,7 @@ $('who').onchange = fillFights;
 async function loadWcl(link) {
   const ref = wcl.parseReportUrl(link);
   if (!ref) { $('wclStatus').textContent = 'That does not look like a Warcraft Logs report link.'; return; }
-  if (!wcl.token()) return wcl.signIn(link).catch(wclError);
+  if (!wcl.token() && !(await wcl.hasProxy())) return wcl.signIn(link).catch(wclError);
   $('wclStatus').textContent = 'Loading the report…';
   try {
     report = await wcl.loadReport(ref.code);

@@ -67,7 +67,28 @@ jobs:
           GOTOOLCHAIN: local
         run: WOWSIMS_DIR=.wowsims SKIP_FETCH=1 scripts/build-sim.sh
       - name: Smoke test (parse the sample log and sim it)
-        run: node tests/cooldowns_test.mjs && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
+        run: node tests/cooldowns_test.mjs && node tests/worker_test.mjs && node tests/wcl_proxy_test.mjs && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
+      # Optional: the Worker that loads public Warcraft Logs reports without a sign-in (worker/). It deploys only
+      # when the three secrets exist; without them the page keeps sign-in only.
+      - name: Deploy the Warcraft Logs Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WCL_ID: ${{ secrets.WCL_SERVER_CLIENT_ID }}
+          WCL_SECRET: ${{ secrets.WCL_SERVER_CLIENT_SECRET }}
+        working-directory: worker
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$WCL_ID" ] || [ -z "$WCL_SECRET" ]; then
+            echo "Worker secrets not set; the page keeps Warcraft Logs sign-in only."; exit 0
+          fi
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || unset CLOUDFLARE_ACCOUNT_ID
+          npx --yes wrangler@4 deploy 2>&1 | tee deploy.log
+          url=$(grep -o 'https://[A-Za-z0-9.-]*\.workers\.dev' deploy.log | head -1)
+          [ -n "$url" ] || { echo "::error::Could not find the Worker address in the wrangler output."; exit 1; }
+          printf '%s' "$WCL_ID" | npx --yes wrangler@4 secret put WCL_CLIENT_ID
+          printf '%s' "$WCL_SECRET" | npx --yes wrangler@4 secret put WCL_CLIENT_SECRET
+          printf '{"url":"%s"}\n' "$url" > ../web/wcl-proxy.json
+          echo "Worker live at $url"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

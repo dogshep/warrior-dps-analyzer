@@ -1,10 +1,13 @@
 // Loads a fight from a Warcraft Logs report link (forever.warcraftlogs.com) and turns its events into the same
 // shape the combat log parser produces, so the analysis code is shared.
 //
-// Sign-in uses OAuth with PKCE, the flow for pages with no server: the page holds only a public client id, and
-// each viewer signs in with their own Warcraft Logs account. The token stays in this browser's localStorage.
+// Public reports load with no sign-in through this site's Worker (see proxy() below). Otherwise, sign-in uses OAuth
+// with PKCE, the flow for pages with no server: the page holds only a public client id, and each viewer signs in
+// with their own Warcraft Logs account. The token stays in this browser's localStorage.
 
 export const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
+
+import { QUERIES } from './wcl-queries.js';
 
 const SITE = 'https://forever.warcraftlogs.com';
 const AUTHORIZE = `${SITE}/oauth/authorize`;
@@ -106,10 +109,37 @@ export async function finishSignIn() {
   return pending;
 }
 
+// Without a sign-in, public reports load through this site's Worker (worker/), which holds a Warcraft Logs
+// client secret. Its address is written to wcl-proxy.json at deploy time; no file means sign-in only.
+let proxyUrl;
+export async function hasProxy(fetchImpl = fetch) { return !!(await proxy(fetchImpl)); }
+async function proxy(fetchImpl = fetch) {
+  if (proxyUrl === undefined) {
+    proxyUrl = null;
+    try { const r = await fetchImpl('wcl-proxy.json'); if (r.ok) proxyUrl = (await r.json()).url || null; } catch {}
+  }
+  return proxyUrl;
+}
+
+async function viaProxy(url, op, variables, fetchImpl) {
+  const res = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op, variables }) });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data.data?.reportData?.report) return data.data;
+  // Private reports (and an exhausted shared quota) need the viewer's own sign-in.
+  const e = new Error(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report needs a Warcraft Logs sign-in (it may be private).');
+  e.needsAuth = true;
+  throw e;
+}
+
 let apiUrl = null;
-async function gql(query, variables, fetchImpl = fetch) {
+async function gql(op, variables, fetchImpl = fetch) {
+  const query = QUERIES[op];
   const t = token();
-  if (!t) { const e = new Error('Sign in to Warcraft Logs first.'); e.needsAuth = true; throw e; }
+  if (!t) {
+    const url = await proxy(fetchImpl);
+    if (url) return viaProxy(url, op, variables, fetchImpl);
+    const e = new Error('Sign in to Warcraft Logs first.'); e.needsAuth = true; throw e;
+  }
   const urls = apiUrl ? [apiUrl] : APIS;
   let lastErr;
   for (const url of urls) {
@@ -122,25 +152,11 @@ async function gql(query, variables, fetchImpl = fetch) {
   throw lastErr;
 }
 
-const REPORT_QUERY = `query($code: String!) { reportData { report(code: $code) {
-  title startTime
-  fights { id encounterID name startTime endTime kill }
-  masterData { actors(type: "Player") { id name subType server } abilities { gameID name } }
-} } }`;
-
-const EVENTS_QUERY = `query($code: String!, $fight: Int!, $actor: Int!, $start: Float!, $end: Float!) { reportData { report(code: $code) {
-  mine: events(fightIDs: [$fight], sourceID: $actor, startTime: $start, endTime: $end, includeResources: true, limit: 10000) { data nextPageTimestamp }
-  onMe: events(fightIDs: [$fight], targetID: $actor, startTime: $start, endTime: $end, dataType: Buffs, limit: 10000) { data nextPageTimestamp }
-  debuffs: events(fightIDs: [$fight], startTime: $start, endTime: $end, dataType: Debuffs, hostilityType: Enemies, limit: 10000) { data nextPageTimestamp }
-  deaths: events(fightIDs: [$fight], startTime: $start, endTime: $end, dataType: Deaths, limit: 10000) { data nextPageTimestamp }
-  info: events(fightIDs: [$fight], sourceID: $actor, startTime: $start, endTime: $end, dataType: CombatantInfo, limit: 100) { data }
-} } }`;
-
 const HIT_MISS = { 0: 'MISS', 7: 'DODGE', 8: 'PARRY', 10: 'IMMUNE', 14: 'RESIST' };
 
 // Report metadata: warriors and fights, in the shapes the page's pickers use.
 export async function loadReport(code, fetchImpl) {
-  const r = (await gql(REPORT_QUERY, { code }, fetchImpl)).reportData.report;
+  const r = (await gql('report', { code }, fetchImpl)).reportData.report;
   const warriors = r.masterData.actors.filter(a => a.subType === 'Warrior').map(a => ({ guid: String(a.id), id: a.id, name: a.name, hasGear: true }));
   const fights = r.fights.filter(f => f.endTime - f.startTime > 10000).map(f => ({
     id: f.id, kind: f.encounterID ? 'boss' : 'trash', name: f.name, start: f.startTime, end: f.endTime, success: !!f.kill,
@@ -153,7 +169,7 @@ export async function loadReport(code, fetchImpl) {
 async function allEvents(code, fight, actor, field, fetchImpl) {
   let start = fight.start, out = [];
   for (let page = 0; page < 30; page++) {
-    const r = (await gql(EVENTS_QUERY, { code, fight: fight.id, actor, start, end: fight.end }, fetchImpl)).reportData.report;
+    const r = (await gql('events', { code, fight: fight.id, actor, start, end: fight.end }, fetchImpl)).reportData.report;
     out = out.concat(r[field].data);
     if (!r[field].nextPageTimestamp) return { first: r, events: out };
     start = r[field].nextPageTimestamp;
