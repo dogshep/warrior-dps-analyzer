@@ -4,7 +4,7 @@
 // Sign-in uses OAuth with PKCE, the flow for pages with no server: the page holds only a public client id, and
 // each viewer signs in with their own Warcraft Logs account. The token stays in this browser's localStorage.
 
-export const WCL_CLIENT_ID = ''; // Set to the public client id of the Warcraft Logs API client for this site.
+export const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
 
 const SITE = 'https://forever.warcraftlogs.com';
 const AUTHORIZE = `${SITE}/oauth/authorize`;
