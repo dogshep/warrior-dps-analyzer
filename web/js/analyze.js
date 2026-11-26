@@ -4,7 +4,50 @@
 const LOG_TO_SIM_SLOTS = [0, 1, 2, 14, 4, 8, 9, 5, 6, 7, 10, 11, 12, 13, 15, 16, 17];
 const SLOT_NAMES = ['Head', 'Neck', 'Shoulder', 'Back', 'Chest', 'Wrist', 'Hands', 'Waist', 'Legs', 'Feet', 'Ring 1', 'Ring 2', 'Trinket 1', 'Trinket 2', 'Main hand', 'Off hand', 'Ranged'];
 // Slots a level 60 warrior normally enchants (sim slot indexes).
-const ENCHANTABLE = { 0: 'Head (Libram / Lesser Arcanum)', 2: 'Shoulder (Zandalar / Might of the Scourge)', 3: 'Back', 4: 'Chest', 5: 'Wrist', 6: 'Hands', 8: 'Legs (Libram / Lesser Arcanum)', 9: 'Feet', 14: 'Main hand', 15: 'Off hand' };
+// Item type of each sim slot (1 head ... 13 weapon), for slot-specific enchant names.
+const SLOT_ITEM_TYPE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 14];
+// The DPS warrior enchants per sim slot, best first, from the wowsims Forever enchant list. Any enchant not
+// listed, or no enchant, is flagged. Two-hand weapons also accept the +25 Agility and +25 Strength enchants.
+const ARCANUMS = [[2543, 'Arcanum of Rapidity (+1% haste)'], [1506, 'Lesser Arcanum, +8 Strength'], [1508, 'Lesser Arcanum, +8 Agility']];
+const WEAPON = [[7940, 'Grand Crusader'], [1900, 'Crusader']];
+export const BEST_ENCHANTS = {
+  0: ARCANUMS,
+  2: [[2717, 'Might of the Scourge'], [2606, 'Zandalar Signet of Might']],
+  3: [[7667, 'Agility (+5)']],
+  4: [[7645, 'Living Stats (+4 all stats)'], [1891, 'Greater Stats (+4 all stats)']],
+  5: [[7656, 'Superior Agility (+9)'], [1885, 'Superior Strength (+9)']],
+  6: [[2564, 'Superior Agility (+15)'], [2563, 'Superior Strength (+15)']],
+  8: ARCANUMS,
+  9: [[1887, 'Greater Agility (+7)']],
+  14: WEAPON,
+  15: WEAPON,
+};
+const TWO_HAND_EXTRA = [[2646, 'Agility (+25)'], [8215, 'Strength (+25)']];
+const SLOT_LABEL = { 0: 'Head', 2: 'Shoulder', 3: 'Back', 4: 'Chest', 5: 'Wrist', 6: 'Hands', 8: 'Legs', 9: 'Feet', 14: 'Main hand', 15: 'Off hand' };
+
+export function enchantName(names, effectId, simSlot) {
+  const byType = names.enchants[effectId];
+  if (!byType) return effectId ? `#${effectId}` : '';
+  if (typeof byType === 'string') return byType;
+  return byType[SLOT_ITEM_TYPE[simSlot]] || Object.values(byType)[0];
+}
+
+// Per enchantable slot: {slot, label, have, haveName, ok, best: [names]}. Shields and off-hand non-weapons are skipped.
+export function auditEnchants(gear, names) {
+  const out = [];
+  for (const [slotStr, best] of Object.entries(BEST_ENCHANTS)) {
+    const slot = Number(slotStr);
+    const it = gear[LOG_TO_SIM_SLOTS[slot]];
+    if (!it || !it.id) continue;
+    const info = names.items[it.id];
+    if (slot === 15 && info && info[1] !== 13) continue;
+    let list = best;
+    if (slot === 14 && info && info[4] === 4) list = [...WEAPON, ...TWO_HAND_EXTRA];
+    const ok = list.some(([id]) => id === it.enchant);
+    out.push({ slot, label: SLOT_LABEL[slot], have: it.enchant, haveName: it.enchant ? enchantName(names, it.enchant, slot).replace(/^Enchant [\w\s-]+? - /, '') : '', ok, best: list.map(([, n]) => n) });
+  }
+  return out;
+}
 
 export const DEFAULT_TALENTS = {
   fury: '30303213002-050530045122100231',
@@ -114,7 +157,7 @@ export function analyzeFight(parser, guid, fight, names) {
   const preset = spec === 'arms' ? 'arms' : twoHand ? 'fury_2h' : 'fury';
 
   return {
-    guid, name: parser.names.get(guid), fight, dur, total, dps: total / dur,
+    names, guid, name: parser.names.get(guid), fight, dur, total, dps: total / dur,
     abilities: [...byAbility.values()].sort((a, b) => b.damage - a.damage),
     casts, dmg, misses, targetCount, mainTarget, executeStart, executeKnown,
     rageCapped: capped, idleSec: idle / 1000, died: deathT !== undefined, deathAt: deathT ? (deathT - fight.start) / 1000 : null,
@@ -289,9 +332,11 @@ export function suggestions(a, sim, ideal, castable) {
   if (a.died) out.push({ kind: 'survival', title: `You died at ${Math.round(a.deathAt)}s`, detail: 'A dead warrior does 0 DPS. Check what killed you and use a healthstone, potion or Shield Wall timing.', gain: null });
 
   const gear = a.combatant?.items || [];
-  const missingEnchants = Object.entries(ENCHANTABLE).filter(([slot]) => { const it = gear[LOG_TO_SIM_SLOTS[slot]]; return it && it.id && !it.enchant; }).map(([, n]) => n);
+  const audit = a.combatant ? auditEnchants(gear, a.names || {}) : [];
+  const missing = audit.filter(e => !e.have), weak = audit.filter(e => e.have && !e.ok);
   if (!a.combatant) out.push({ kind: 'gear', title: 'No gear in this log', detail: 'Turn on Advanced Combat Logging (System > Network) so the log records your gear and the sim can use it.', gain: null });
-  else if (missingEnchants.length) out.push({ kind: 'gear', title: `Missing enchants: ${missingEnchants.join(', ')}`, detail: 'Enchants are cheap DPS. Crusader on weapons, +15 Agility on hands, +7 Agility on wrists and +3 Stats on chest are the usual picks.', gain: null });
+  if (missing.length) out.push({ kind: 'gear', title: `Missing enchants: ${missing.map(e => e.label).join(', ')}`, detail: missing.map(e => `${e.label}: ${e.best.slice(0, 2).join(' or ')}`).join('. ') + '.', gain: null });
+  if (weak.length) out.push({ kind: 'gear', title: `Upgrade enchants: ${weak.map(e => e.label).join(', ')}`, detail: weak.map(e => `${e.label}: ${e.haveName} → ${e.best.slice(0, 2).join(' or ')}`).join('. ') + '.' + (weak.some(e => e.slot === 9 && /Speed/.test(e.haveName)) ? ' Run speed on boots is fine for leveling and farming, but costs DPS in raids.' : ''), gain: null });
 
   if (ideal && sim) {
     const diff = ideal.simDps - sim.simDps;

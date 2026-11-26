@@ -9,7 +9,10 @@ for it in db.get("items", []):
     # [name, item type, quality, ilvl, hand type (4 = two-hand), weapon speed]
     out["items"][it["id"]] = [it.get("name", ""), it.get("type", 0), it.get("quality", 0), so.get("ilvl", 0), it.get("handType", 0), it.get("weaponSpeed", 0)]
 for e in db.get("enchants", []):
-    out["enchants"][e["effectId"]] = e.get("name", "")
+    # One effect id can be a different enchant per slot (1887 is +7 Agility on bracers, gloves and boots),
+    # so names are keyed by effect id, then by item type (1 head ... 13 weapon).
+    for t in [e.get("type", 0)] + e.get("extraTypes", []):
+        out["enchants"].setdefault(e["effectId"], {})[t] = e.get("name", "")
 for s in db.get("spellIcons", []):
     name = s.get("name", "")
     if s.get("rank"):

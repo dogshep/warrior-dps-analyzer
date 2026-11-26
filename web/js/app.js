@@ -1,5 +1,5 @@
 import { parseFile } from './logparser.js';
-import { analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
+import { analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -102,12 +102,19 @@ function renderTables(a, names) {
   $('abil').innerHTML = '<tr><th>Ability</th><th class="n">Casts</th><th class="n">Damage</th><th class="n">%</th><th class="n">Crit</th></tr>' +
     a.abilities.filter(x => x.damage > 0 || x.casts > 0).map(x => `<tr><td>${esc(x.name)}</td><td class="n">${x.name === 'Melee' ? x.hits : x.casts}</td><td class="n">${fmt(x.damage)}</td><td class="n">${a.total ? ((x.damage / a.total) * 100).toFixed(1) : 0}</td><td class="n">${x.hits ? Math.round((x.crits / x.hits) * 100) + '%' : ''}</td></tr>`).join('');
   const gear = a.combatant?.items || [];
+  const audit = new Map(auditEnchants(gear, names).map(e => [e.slot, e]));
+  const enchCell = (it, si) => {
+    const e = audit.get(si);
+    const nm = it.enchant ? esc(enchantName(names, it.enchant, si).replace(/^Enchant [\w\s-]+? - /, '')) : '';
+    if (!e || e.ok) return nm;
+    return `<span class="warn">${nm || 'None'}</span><div class="hint">→ ${esc(e.best.slice(0, 2).join(' or '))}</div>`;
+  };
   $('gear').innerHTML = gear.length
     ? '<tr><th>Slot</th><th>Item</th><th>Enchant</th></tr>' + LOG_TO_SIM_SLOTS.map((li, si) => {
         const it = gear[li];
         if (!it || !it.id) return '';
         const n = names.items[it.id];
-        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/classic/item=${it.id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${it.id} <span class="warn">(not in sim)</span>`}</td><td>${it.enchant ? esc(names.enchants[it.enchant] || `#${it.enchant}`) : ''}</td></tr>`;
+        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/classic/item=${it.id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${it.id} <span class="warn">(not in sim)</span>`}</td><td>${enchCell(it, si)}</td></tr>`;
       }).join('')
     : '<tr><td class="warn">No gear in this log. Turn on Advanced Combat Logging.</td></tr>';
 }
