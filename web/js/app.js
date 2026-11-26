@@ -142,6 +142,15 @@ function renderStats(a, s, ideal) {
   $('stats').innerHTML = cells.map(([k, v, c]) => `<div class="stat ${c || ''}"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('');
 }
 
+// What the listed play tips don't cover, so the group adds up to "Room to grow" exactly (using the rounded numbers
+// shown on the page).
+function restLine(play, gap) {
+  if (!(gap > 0)) return '';
+  const rest = Math.round(gap) - play.reduce((n, t) => n + (t.gain ? Math.round(t.gain) : 0), 0);
+  if (rest < 1) return '';
+  return `<li><span class="t">Everything else</span><span class="g">≈ +${fmt(rest)} DPS</span><div class="d">Small differences from the sim that are too small to list or have no DPS number (like Battle Shout uptime), plus a little sim randomness. With this line, the play tips add up to your room to grow.</div></li>`;
+}
+
 // Play tips first (they share "Room to grow"), then gear and consumables (on top of it).
 function renderTips(list, gap) {
   const li = (t, i) => `<li${i ? '' : ' value="1"'}><span class="t">${esc(t.title)}</span>${t.gain ? `<span class="g">≈ +${fmt(t.gain)} DPS</span>` : ''}<div class="d">${esc(t.detail)}</div></li>`;
@@ -150,6 +159,7 @@ function renderTips(list, gap) {
   $('tips').innerHTML =
     head('Play', gap > 0 ? `These share your room to grow (+${fmt(gap)}). Each is an estimate, and they overlap.` : '') +
     (play.length ? play.map(li).join('') : '<li>Nothing big stands out. Nice work. Push for longer uptime and cleaner cooldown timing.</li>') +
+    restLine(play, gap) +
     (gear.length ? head('Gear and consumables', 'On top of your room to grow.') + gear.map(li).join('') : '');
 }
 
