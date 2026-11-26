@@ -59,3 +59,7 @@ Link import needs a Warcraft Logs API client registered to this site, once:
 For a local copy, add `http://localhost:8000/` as a second redirect URL, or paste your own client id under "Warcraft Logs settings" on the page.
 
 `node tests/wcl_mock.mjs tests/fixture-WoWCombatLog.txt` turns the sample log into Warcraft Logs API responses, for testing the import offline.
+
+## In-game addon
+
+`addon/WarriorTips` is a companion WoW Forever addon with live tips and a post-fight report card. See [addon/README.md](addon/README.md).
