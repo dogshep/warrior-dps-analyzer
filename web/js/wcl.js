@@ -176,13 +176,17 @@ export async function loadFight(report, warrior, fight, fetchImpl) {
 
   for (const e of mine) {
     const t = e.timestamp, dst = String(e.targetID ?? '');
+    // `mine` holds every event that involves the warrior, including heals and buffs others cast on them.
+    // Resources belong to the source (resourceActor 1) or the target (2); keep only the warrior's own rage.
     const res = (e.classResources || []).find(c => c.type === 1);
-    if (res && e.resourceActor !== 2) p.rage.push([t, res.max >= 1000 ? res.amount / 10 : res.amount]);
-    if (e.resourceActor === 2 && e.maxHitPoints) {
+    const resOwner = e.resourceActor === 2 ? e.targetID : e.sourceID;
+    if (res && resOwner === actor) p.rage.push([t, res.max >= 1000 ? res.amount / 10 : res.amount]);
+    if (e.resourceActor === 2 && e.maxHitPoints && e.targetID !== actor) {
       let arr = targetHp.get(dst);
       if (!arr) targetHp.set(dst, (arr = []));
       arr.push([t, e.hitPoints / e.maxHitPoints]);
     }
+    if (e.sourceID !== actor) continue;
     if (e.type === 'cast') p.casts.push({ t, spellId: e.abilityGameID, name: name(e.abilityGameID), dst });
     else if (e.type === 'damage') {
       if (HIT_MISS[e.hitType] !== undefined && !e.amount) { p.misses.push({ t, spellId: e.abilityGameID, name: e.abilityGameID === 1 ? 'Melee' : name(e.abilityGameID), type: HIT_MISS[e.hitType], dst }); continue; }

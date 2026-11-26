@@ -99,7 +99,7 @@ async function analyze() {
     ideal.missing = missingConsumes(cons.found);
     renderStats(a, s);
     renderTips(suggestions(a, s, ideal, aplSpellNames(apls[a.preset], names)));
-    $('simnote').textContent = `Sim: ${a.preset.replace('_', ' ')} rotation, ${iterations} iterations of a ${Math.round(a.dur)}s fight against ${a.targetCount} target${a.targetCount > 1 ? 's' : ''}, with the buffs and consumables seen in your log. Consumables seen: ${cons.found.map(f => f.name).join(', ') || 'none'}.`;
+    $('simnote').textContent = `${a.isRun ? `Dungeon run: your DPS counts only time in combat, and the sim fights a typical ${Math.round(a.simDur)}s pull, scaled to your ${a.pulls} pulls. ` : ''}Sim: ${a.preset.replace('_', ' ')} rotation, ${iterations} iterations of a ${Math.round(a.simDur || a.dur)}s fight against ${a.targetCount} target${a.targetCount > 1 ? 's' : ''}, with the buffs and consumables seen in your log. Consumables seen: ${cons.found.map(f => f.name).join(', ') || 'none'}.`;
   } catch (e) {
     renderTips(suggestions(a, null, null));
     $('simnote').innerHTML = `<span class="warn">The sim failed: ${esc(e.message)}</span>. These tips come from the log alone.`;
@@ -113,7 +113,7 @@ function renderStats(a, s) {
     ['Your DPS', fmt(a.dps)],
     ['Sim DPS, your gear', s ? fmt(s.simDps) : '…'],
     ['Room to grow', s ? (s.simDps > a.dps ? `+${fmt(s.simDps - a.dps)}` : 'at or above sim') : '…', 'gap'],
-    ['Fight length', `${Math.round(a.dur)}s`],
+    a.isRun ? ['In combat', `${Math.round(a.dur / 60)} of ${Math.round((a.fight.end - a.fight.start) / 60000)} min, ${a.pulls} pulls`] : ['Fight length', `${Math.round(a.dur)}s`],
     ['Rotation', a.preset.replace('_', ' ')],
   ];
   $('stats').innerHTML = cells.map(([k, v, c]) => `<div class="stat ${c || ''}"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('');
