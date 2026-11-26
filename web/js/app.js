@@ -90,7 +90,7 @@ async function analyze() {
     const cons = detectConsumes(a, parser, names);
     // Two runs, one after the other: your setup, then the same with full consumables. The bar covers both.
     const step = (run, label) => ({ stage, done }) => stage === 'download'
-      ? showProgress(`Downloading the sim (first run only)… ${Math.round(done * 100)}%`, done)
+      ? (done >= 1 ? showProgress('Starting the sim engine…', 1) : showProgress(`Downloading the sim (first run only)… ${Math.round(done * 100)}%`, done))
       : showProgress(`${label}… ${Math.round(((run + done) / 2) * 100)}%`, (run + done) / 2);
     const mine = await sim(buildRequest(a, parser, names, apls, opts), step(0, `Simming your gear (${iterations} fights)`));
     const best = await sim(buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' }), step(1, 'Simming with full consumables'));
