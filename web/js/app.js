@@ -1,5 +1,6 @@
 import { parseFile } from './logparser.js';
 import * as wcl from './wcl.js';
+import { mmss } from './cooldowns.js';
 import { analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
@@ -84,6 +85,7 @@ async function analyze() {
   $('out').hidden = false;
   renderStats(a, null);
   renderTables(a, names);
+  renderCooldowns(a);
   showProgress('Starting the sim…', 0);
   $('go').disabled = true;
   try {
@@ -106,6 +108,25 @@ async function analyze() {
   } finally {
     $('go').disabled = false;
   }
+}
+
+// One row per cooldown: when it was up (orange), when it sat ready but unused (red stripes), and the pulls or
+// execute phase behind it.
+function renderCooldowns(a) {
+  const f = a.fight, span = f.end - f.start;
+  const pct = t => `${(((Math.min(Math.max(t, f.start), f.end) - f.start) / span) * 100).toFixed(2)}%`;
+  const box = (cls, from, to, title) => `<i class="${cls}" style="left:${pct(from)};width:calc(${pct(to)} - ${pct(from)})"${title ? ` title="${esc(title)}"` : ''}></i>`;
+  const back = a.pullSpans ? a.pullSpans.map(p => box('pull', p.start, p.end)).join('')
+    : a.executeKnown ? box('exec', a.executeStart, f.end, 'Execute phase') : '';
+  const rows = a.cooldowns.map(r => {
+    const sub = a.pullSpans ? `used on ${r.usedPulls} of ${r.possible} possible pull${r.possible === 1 ? '' : 's'}` : `${r.uses.length} of ${r.possible} possible use${r.possible === 1 ? '' : 's'}`;
+    const marks = back + r.idle.map(([x, y]) => box('idle', x, y, `Ready but unused ${mmss(x - f.start)}–${mmss(y - f.start)}`)).join('') +
+      r.uses.map(u => box('use', u, u + r.dur * 1000, `${r.name} at ${mmss(u - f.start)}`)).join('');
+    return `<div class="lbl"><b>${esc(r.name)}</b><span class="${r.lost ? 'warn' : ''}">${esc(sub)}</span></div><div class="track">${marks}</div>`;
+  }).join('');
+  $('cds').innerHTML = rows + `<div class="axis"><span>0:00</span><span>${mmss(span / 2)}</span><span>${mmss(span)}</span></div>`;
+  $('cdnote').innerHTML = `<span class="legend"><span><i style="background:var(--accent)"></i>Cooldown up</span><span><i style="background:repeating-linear-gradient(135deg,#d9644a99 0 3px,transparent 3px 6px)"></i>Ready but unused</span>${a.pullSpans ? '<span><i style="background:#ffffff22"></i>Pull</span>' : a.executeKnown ? '<span><i style="background:#c7802f44"></i>Execute phase</span>' : ''}</span>` +
+    (a.pullSpans ? 'On a dungeon run, "possible" counts one use on each pull of 20s or more (any pull for Bloodrage) that the cooldown was back for, so a fast group is not held against you.' : 'Talent, racial and potion cooldowns only show once the log has you using them.');
 }
 
 function renderStats(a, s) {
