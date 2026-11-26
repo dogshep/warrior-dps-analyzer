@@ -105,11 +105,35 @@ function uptime(auras, re, f) {
   return total / (f.end - f.start);
 }
 
+// Forever logs a whole dungeon run as one encounter. A fight this long is split into pulls (no damage from the
+// warrior for 15s ends a pull), and DPS, downtime and the sim all use the pulls instead of the walk between them.
+const LONG_FIGHT_MS = 6 * 60 * 1000;
+const PULL_GAP_MS = 15000;
+
+export function splitPulls(dmg, fight) {
+  const pulls = [];
+  let cur = null;
+  for (const d of dmg) {
+    if (!cur || d.t - cur.end > PULL_GAP_MS) { cur = { start: d.t, end: d.t, dmg: 0, targets: new Map() }; pulls.push(cur); }
+    cur.end = d.t;
+    cur.dmg += d.amount;
+    cur.targets.set(d.dst, (cur.targets.get(d.dst) || 0) + d.amount);
+  }
+  // A pull lasts at least a couple of swings, so a lone hit does not count as 0 seconds of combat.
+  for (const pl of pulls) pl.end = Math.min(fight.end, Math.max(pl.end + 1500, pl.start + 3000));
+  return pulls;
+}
+
+const median = xs => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+
 export function analyzeFight(parser, guid, fight, names) {
   const p = parser.players.get(guid);
-  const dur = (fight.end - fight.start) / 1000;
   const casts = p.casts.filter(c => inFight(fight, c.t));
-  const dmg = p.damage.filter(d => inFight(fight, d.t));
+  const dmg = p.damage.filter(d => inFight(fight, d.t)).sort((a, b) => a.t - b.t);
+  const isRun = fight.end - fight.start > LONG_FIGHT_MS;
+  const pulls = isRun ? splitPulls(dmg, fight) : null;
+  const active = pulls ? sum(pulls.map(pl => pl.end - pl.start)) / 1000 : (fight.end - fight.start) / 1000;
+  const dur = Math.max(1, active);
   const misses = p.misses.filter(m => inFight(fight, m.t));
   const auras = p.auras;
   const total = sum(dmg.map(d => d.amount));
@@ -120,7 +144,7 @@ export function analyzeFight(parser, guid, fight, names) {
     if (!a) byAbility.set(name, (a = { name, casts: 0, hits: 0, damage: 0, crits: 0, misses: 0 }));
     return a;
   };
-  for (const c of casts) ab(c.name).casts++;
+  for (const c of casts) { const x = ab(c.name); x.casts++; x.castEvents = true; }
   for (const d of dmg) { const a = ab(d.name); a.hits++; a.damage += d.amount; if (d.crit) a.crits++; }
   for (const m of misses) ab(m.name).misses++;
   // Heroic Strike, Cleave and melee have no cast event in some clients: count landed + missed instead.
@@ -131,7 +155,11 @@ export function analyzeFight(parser, guid, fight, names) {
   for (const d of dmg) perTarget.set(d.dst, (perTarget.get(d.dst) || 0) + d.amount);
   const sortedTargets = [...perTarget.entries()].sort((a, b) => b[1] - a[1]);
   const mainTarget = sortedTargets[0]?.[0];
-  const targetCount = Math.max(1, Math.min(5, sortedTargets.filter(([, v]) => v > total * 0.08).length));
+  const countTargets = (m, tot) => Math.max(1, Math.min(5, [...m.values()].filter(v => v > tot * 0.08).length));
+  // For a run: the typical pull, by time spent, is what the sim fights.
+  const targetCount = pulls ? Math.max(1, Math.min(5, Math.round(sum(pulls.map(pl => countTargets(pl.targets, pl.dmg) * (pl.end - pl.start))) / (dur * 1000))))
+    : countTargets(perTarget, total);
+  const simDur = pulls ? Math.min(300, Math.max(20, median(pulls.map(pl => (pl.end - pl.start) / 1000)))) : dur;
 
   // Execute phase start: first time the main target was under 20% health, else the last 20% of the fight.
   let executeStart = fight.start + (fight.end - fight.start) * 0.8, executeKnown = false;
@@ -145,10 +173,13 @@ export function analyzeFight(parser, guid, fight, names) {
   // Downtime: gaps over 2.5s between any of the player's damage or casts, ignoring the time after death.
   const deathT = p.deaths.find(t => inFight(fight, t));
   const activity = [...dmg.map(d => d.t), ...casts.map(c => c.t)].sort((a, b) => a - b);
-  let idle = 0, prev = fight.start;
-  for (const t of activity) { if (t - prev > 2500) idle += t - prev - 2000; prev = t; }
-  const endT = deathT ?? fight.end;
-  if (endT - prev > 2500) idle += endT - prev - 2000;
+  let idle = 0;
+  const windows = pulls || [{ start: fight.start, end: deathT ?? fight.end }];
+  for (const w of windows) {
+    let prev = w.start;
+    for (const t of activity) { if (t < w.start || t > w.end) continue; if (t - prev > 2500) idle += t - prev - 2000; prev = t; }
+    if (!pulls && w.end - prev > 2500) idle += w.end - prev - 2000;
+  }
 
   const combatant = parser.combatants.get(guid);
   const spec = casts.some(c => c.name === 'Mortal Strike') ? 'arms' : 'fury';
@@ -157,7 +188,7 @@ export function analyzeFight(parser, guid, fight, names) {
   const preset = spec === 'arms' ? 'arms' : twoHand ? 'fury_2h' : 'fury';
 
   return {
-    names, guid, name: parser.names.get(guid), fight, dur, total, dps: total / dur,
+    names, guid, name: parser.names.get(guid), fight, dur, simDur, isRun, pulls: pulls ? pulls.length : null, pullStarts: pulls ? pulls.map(pl => pl.start) : null, total, dps: total / dur,
     abilities: [...byAbility.values()].sort((a, b) => b.damage - a.damage),
     casts, dmg, misses, targetCount, mainTarget, executeStart, executeKnown,
     rageCapped: capped, idleSec: idle / 1000, died: deathT !== undefined, deathAt: deathT ? (deathT - fight.start) / 1000 : null,
@@ -192,7 +223,7 @@ export function buildRequest(a, parser, names, apls, opts = {}) {
   const consumes = detectConsumes(a, parser, names);
   const useConsumes = opts.consumes === 'ideal' ? DEFAULT_CONSUMES : consumes.spec;
 
-  const duration = Math.max(20, Math.round(a.dur));
+  const duration = Math.max(20, Math.round(a.simDur || a.dur));
   const player = {
     name: a.name || 'Warrior', race: opts.race || (a.combatant?.faction === 1 ? 'RaceHuman' : 'RaceOrc'), class: 'ClassWarrior',
     equipment: { items }, consumables: useConsumes, buffs: b.individual,
@@ -240,20 +271,24 @@ function cooldownChecks(a, simCasts) {
   const out = [];
   const count = n => a.casts.filter(c => c.name === n).length;
   const cds = [
-    ['Death Wish', 180, 'Use Death Wish on pull and again every 3 minutes, lined up with trinkets and potions.'],
+    ['Death Wish', 180, 'Use Death Wish on pull and again every 3 minutes, lined up with trinkets and potions.', true],
     ['Recklessness', 1800, 'Recklessness is a free burst window. Use it on bosses, ideally at the end with Death Wish.'],
     ['Bloodrage', 60, 'Bloodrage is free rage on a 1 minute cooldown. Use it whenever you are not rage capped.'],
     ['Blood Fury', 120, 'Use Blood Fury on cooldown, together with Death Wish.'],
     ['Berserking', 180, 'Use Berserking with your other cooldowns.'],
   ];
-  for (const [name, cd, tip] of cds) {
-    const sim = simCasts?.get(name);
-    const known = count(name) > 0 || (sim && sim > 0);
-    if (!known) continue;
-    const possible = Math.floor(a.dur / cd) + 1;
+  for (const [name, cd, tip, talent] of cds) {
     const used = count(name);
-    const expected = sim !== undefined ? Math.round(sim) : possible;
-    if (used < expected) out.push({ kind: 'cooldown', title: `Use ${name} more (${used} of ${expected} possible)`, detail: tip, gain: null });
+    // A talent cooldown counts only if the player used it at least once: the log does not say which talents they have.
+    if (talent ? used === 0 : used === 0 && !(simCasts?.get(name) > 0)) continue;
+    // Uses possible: on a dungeon run, one per pull start once the cooldown is back; otherwise every `cd` seconds.
+    let possible;
+    if (a.pullStarts) {
+      possible = 0;
+      let ready = -Infinity;
+      for (const t of a.pullStarts) if (t >= ready) { possible++; ready = t + cd * 1000; }
+    } else possible = Math.floor(a.dur / cd) + 1;
+    if (used < possible) out.push({ kind: 'cooldown', title: `Use ${name} more (${used} of ${possible} possible)`, detail: tip, gain: null });
   }
   return out;
 }
@@ -289,10 +324,15 @@ const TIPS = {
   'Sunder Armor': 'Keep 5 stacks of Sunder Armor up when no other warrior is on it.',
 };
 
+// Abilities that are not part of a DPS priority, so "the sim never uses it" is no advice.
+const UTILITY = new Set(['Melee', 'Sunder Armor', 'Battle Shout', 'Hamstring', 'Pummel', 'Shield Bash', 'Charge', 'Intercept', 'Victory Rush', 'Taunt', 'Mocking Blow', 'Demoralizing Shout', 'Intimidating Shout', 'Piercing Howl', 'Berserker Rage', 'Bloodrage', 'Thunder Clap']);
+
 export function suggestions(a, sim, ideal, castable) {
   const out = [];
   const iters = sim?.iterations || 1;
-  const perFight = m => new Map([...m].map(([k, v]) => [k, v / iters]));
+  // Sim numbers are per simmed fight; a dungeon run sims one typical pull, so scale to the run's combat time.
+  const scale = a.dur / (a.simDur || a.dur);
+  const perFight = m => new Map([...m].map(([k, v]) => [k, (v / iters) * scale]));
   const simCasts = sim ? perFight(sim.simCasts) : null;
   const simDmg = sim ? perFight(sim.simDmg) : null;
 
@@ -317,7 +357,7 @@ export function suggestions(a, sim, ideal, castable) {
     }
     for (const mine of a.abilities) {
       const sc = simCasts.get(mine.name) ?? 0;
-      if (['Melee', 'Sunder Armor', 'Battle Shout', 'Hamstring'].includes(mine.name) || mine.damage <= 0) continue;
+      if (UTILITY.has(mine.name) || mine.damage <= 0 || !mine.castEvents) continue;
       if (mine.casts - sc > Math.max(3, sc * 0.5) && sc < 1 && mine.casts > 3) {
         out.push({ kind: 'rotation', title: `The sim never uses ${mine.name} (you cast it ${mine.casts} times)`, detail: 'Those global cooldowns and rage are better spent on your main attacks.', gain: null });
       }
@@ -335,7 +375,9 @@ export function suggestions(a, sim, ideal, castable) {
   const audit = a.combatant ? auditEnchants(gear, a.names || {}) : [];
   const missing = audit.filter(e => !e.have), weak = audit.filter(e => e.have && !e.ok);
   if (!a.combatant) out.push({ kind: 'gear', title: 'No gear in this log', detail: 'Turn on Advanced Combat Logging (System > Network) so the log records your gear and the sim can use it.', gain: null });
-  if (missing.length) out.push({ kind: 'gear', title: `Missing enchants: ${missing.map(e => e.label).join(', ')}`, detail: missing.map(e => `${e.label}: ${e.best.slice(0, 2).join(' or ')}`).join('. ') + '.', gain: null });
+  const noneAtAll = audit.length >= 6 && audit.every(e => !e.have);
+  if (noneAtAll) out.push({ kind: 'gear', title: 'No enchants found on your gear', detail: 'If your gear is enchanted, this log did not record enchants. If not, enchants are cheap DPS: ' + audit.filter(e => [4, 5, 6, 14].includes(e.slot)).map(e => `${e.label}: ${e.best[0]}`).join('. ') + '.', gain: null });
+  else if (missing.length) out.push({ kind: 'gear', title: `Missing enchants: ${missing.map(e => e.label).join(', ')}`, detail: missing.map(e => `${e.label}: ${e.best.slice(0, 2).join(' or ')}`).join('. ') + '.', gain: null });
   if (weak.length) out.push({ kind: 'gear', title: `Upgrade enchants: ${weak.map(e => e.label).join(', ')}`, detail: weak.map(e => `${e.label}: ${e.haveName} → ${e.best.slice(0, 2).join(' or ')}`).join('. ') + '.' + (weak.some(e => e.slot === 9 && /Speed/.test(e.haveName)) ? ' Run speed on boots is fine for leveling and farming, but costs DPS in raids.' : ''), gain: null });
 
   if (ideal && sim) {
