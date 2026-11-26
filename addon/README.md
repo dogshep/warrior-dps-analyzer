@@ -4,7 +4,7 @@ A small WoW Forever addon that gives quiet, opt-in tips while you play a warrior
 
 ## Install
 
-Copy the `WarriorTips` folder into `World of Warcraft\_forever_\Interface\AddOns\` (the folder next to your other Forever addons) and restart the game or `/reload`. The toc uses interface `16001`; check yours with `/dump select(4, GetBuildInfo())`.
+Copy the `WarriorTips` folder into the `Interface\AddOns` folder of your WoW Forever install (where your other Forever addons are) and restart the game or `/reload`. The toc uses interface `16001`; check yours with `/dump select(4, GetBuildInfo())`.
 
 ## First run: the probe
 
