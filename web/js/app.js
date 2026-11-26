@@ -170,8 +170,13 @@ function wclError(e, link) {
 
 $('wclGo').onclick = () => loadWcl($('wcl').value);
 $('wcl').onkeydown = e => { if (e.key === 'Enter') loadWcl($('wcl').value); };
-$('wclClient').value = wcl.clientId();
-$('wclClient').onchange = () => wcl.setClientId($('wclClient').value);
+$('wclClient').value = wcl.clientId() === wcl.WCL_CLIENT_ID ? '' : wcl.clientId();
+$('wclClient').onchange = () => {
+  if (!wcl.setClientId($('wclClient').value)) {
+    $('wclStatus').innerHTML = '<span class="warn">That is not a v2 API client id (it looks like 01a2b3c4-…). Using this site\'s client.</span>';
+    $('wclClient').value = '';
+  }
+};
 $('wclOut').onclick = () => { wcl.signOut(); $('wclStatus').textContent = 'Signed out of Warcraft Logs.'; };
 wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
 $('go').onclick = analyze;

@@ -19,11 +19,20 @@ const store = {
   del: k => { try { localStorage.removeItem(k); } catch {} },
 };
 
+// v2 API client ids are UUIDs. Anything else (a v1 key, say) is ignored so it can't shadow the site's client.
+const isClientId = id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+
 export function clientId() {
-  return store.get('wcl_client_id') || WCL_CLIENT_ID;
+  const own = store.get('wcl_client_id');
+  return isClientId(own) ? own : WCL_CLIENT_ID;
 }
+// Returns false (and stores nothing) when `id` is not a v2 client id.
 export function setClientId(id) {
-  id ? store.set('wcl_client_id', id.trim()) : store.del('wcl_client_id');
+  id = (id || '').trim();
+  if (!id) { store.del('wcl_client_id'); return true; }
+  if (!isClientId(id)) { store.del('wcl_client_id'); return false; }
+  store.set('wcl_client_id', id);
+  return true;
 }
 
 // "https://forever.warcraftlogs.com/reports/83cYV91DARnwWNaj?fight=1&source=5" -> {code, fight, source}
