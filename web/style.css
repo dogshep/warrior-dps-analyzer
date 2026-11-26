@@ -38,3 +38,6 @@ td, th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: lef
 td.n, th.n { text-align: right; }
 .warn { color: var(--bad); }
 footer { padding: 20px 16px 40px; font-size: 13px; }
+.row.inline { flex-wrap: nowrap; align-items: center; }
+.row.inline input { flex: 1; min-width: 0; }
+.row.inline .primary { margin-top: 0; }

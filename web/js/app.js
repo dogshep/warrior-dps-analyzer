@@ -1,4 +1,5 @@
 import { parseFile } from './logparser.js';
+import * as wcl from './wcl.js';
 import { analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
@@ -26,9 +27,11 @@ function sim(request) {
   return new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject }); worker.postMessage({ id, request }); });
 }
 
-let parser = null;
+// The loaded source: a parsed log file, or a Warcraft Logs report whose fights load on demand.
+let parser = null, report = null;
 
 async function load(file) {
+  report = null;
   $('progress').hidden = false;
   const bar = $('progress').firstElementChild;
   parser = await parseFile(file, f => (bar.style.width = `${Math.round(f * 100)}%`));
@@ -40,7 +43,7 @@ async function load(file) {
 }
 
 function fillFights() {
-  const fights = parser.fights($('who').value);
+  const fights = report ? report.fights : parser.fights($('who').value);
   $('fight').innerHTML = fights.map((f, i) => `<option value="${i}">${f.kind === 'boss' ? '⚔ ' : ''}${esc(f.name)} (${Math.round((f.end - f.start) / 1000)}s${f.kind === 'boss' && !f.success ? ', wipe' : ''})</option>`).join('');
   const boss = fights.findIndex(f => f.kind === 'boss');
   if (boss >= 0) $('fight').value = String(boss);
@@ -51,6 +54,17 @@ async function analyze() {
   const { names, apls } = await data;
   const guid = $('who').value;
   const fight = $('fight')._fights[Number($('fight').value)];
+  if (report) {
+    $('go').disabled = true;
+    $('wclStatus').textContent = 'Loading the fight from Warcraft Logs…';
+    try {
+      parser = await wcl.loadFight(report, report.warriors.find(w => w.guid === guid), fight);
+      $('wclStatus').textContent = '';
+    } catch (e) {
+      $('go').disabled = false;
+      return wclError(e);
+    }
+  }
   const a = analyzeFight(parser, guid, fight, names);
   if ($('preset').value) a.preset = $('preset').value;
   const iterations = Math.max(50, Number($('iters').value) || 300);
@@ -126,4 +140,38 @@ drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); e.dataTransfer.files[0] && load(e.dataTransfer.files[0]); };
 $('who').onchange = fillFights;
+
+// Warcraft Logs links.
+async function loadWcl(link) {
+  const ref = wcl.parseReportUrl(link);
+  if (!ref) { $('wclStatus').textContent = 'That does not look like a Warcraft Logs report link.'; return; }
+  if (!wcl.token()) return wcl.signIn(link).catch(wclError);
+  $('wclStatus').textContent = 'Loading the report…';
+  try {
+    report = await wcl.loadReport(ref.code);
+  } catch (e) {
+    return wclError(e, link);
+  }
+  parser = null;
+  if (!report.warriors.length) { $('wclStatus').textContent = 'No warriors in this report.'; return; }
+  $('wclStatus').textContent = `Loaded “${report.title}”.`;
+  $('who').innerHTML = report.warriors.map(w => `<option value="${esc(w.guid)}">${esc(w.name)}</option>`).join('');
+  if (ref.source && report.warriors.some(w => w.id === ref.source)) $('who').value = String(ref.source);
+  fillFights();
+  const fi = report.fights.findIndex(f => f.id === ref.fight);
+  if (fi >= 0) $('fight').value = String(fi);
+  $('pickers').hidden = false;
+}
+
+function wclError(e, link) {
+  if (e.needsAuth && link) return wcl.signIn(link);
+  $('wclStatus').innerHTML = `<span class="warn">${esc(e.message || e)}</span>`;
+}
+
+$('wclGo').onclick = () => loadWcl($('wcl').value);
+$('wcl').onkeydown = e => { if (e.key === 'Enter') loadWcl($('wcl').value); };
+$('wclClient').value = wcl.clientId();
+$('wclClient').onchange = () => wcl.setClientId($('wclClient').value);
+$('wclOut').onclick = () => { wcl.signOut(); $('wclStatus').textContent = 'Signed out of Warcraft Logs.'; };
+wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
 $('go').onclick = analyze;
