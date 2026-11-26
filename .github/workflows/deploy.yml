@@ -1,0 +1,72 @@
+name: Build sim and deploy
+
+# Rebuilds the wowsims/forever sim to WebAssembly and publishes the page to GitHub Pages.
+# The wowsims version is the git ref in SIM_REF (a branch, tag or commit); "Run workflow" can override it.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      wowsims_ref:
+        description: 'wowsims/forever branch, tag or commit (blank = SIM_REF)'
+        required: false
+  schedule:
+    - cron: '0 9 * * 2' # Tuesdays, after the weekly reset, to pick up new sim fixes
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pick the wowsims version
+        id: ref
+        env:
+          INPUT_REF: ${{ github.event.inputs.wowsims_ref }}
+        run: |
+          REF="$INPUT_REF"
+          [ -n "$REF" ] || REF="$(tr -d '[:space:]' < SIM_REF)"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+      - name: Fetch wowsims/forever
+        run: |
+          git clone https://github.com/wowsims/forever .wowsims
+          git -C .wowsims checkout "$REF"
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
+          REF: ${{ steps.ref.outputs.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .wowsims/go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install grpcio-tools
+      - name: Build the sim
+        run: WOWSIMS_DIR=.wowsims SKIP_FETCH=1 scripts/build-sim.sh
+      - name: Smoke test (parse the sample log and sim it)
+        run: node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warrior DPS Analyzer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Warrior DPS Analyzer</h1>
+  <p class="sub">For WoW Forever DPS warriors. Drop in a combat log to get a short list of things to try next run. Everything runs in your browser and nothing is uploaded.</p>
+</header>
+<main>
+  <section id="drop" class="card drop">
+    <input type="file" id="file" accept=".txt,.log" hidden>
+    <p><strong>Drop <code>WoWCombatLog-*.txt</code> here</strong> or <button id="pick" class="link">choose a file</button></p>
+    <p class="hint">Find it in <code>World of Warcraft/_classic_era_/Logs/</code>. Type <code>/combatlog</code> before a raid, and turn on <em>Advanced Combat Logging</em> (System, Network) so your gear is recorded.</p>
+    <div id="progress" class="bar" hidden><span></span></div>
+  </section>
+
+  <section id="pickers" class="card" hidden>
+    <div class="row">
+      <label>Warrior <select id="who"></select></label>
+      <label>Fight <select id="fight"></select></label>
+    </div>
+    <details>
+      <summary>Sim settings</summary>
+      <div class="row">
+        <label>Rotation <select id="preset"><option value="">Detect from log</option><option value="fury">Fury (dual wield)</option><option value="fury_2h">Fury (two-hander)</option><option value="arms">Arms</option></select></label>
+        <label>Race <select id="race"><option value="">From faction</option><option>RaceHuman</option><option>RaceOrc</option><option>RaceDwarf</option><option>RaceNightElf</option><option>RaceGnome</option><option>RaceTauren</option><option>RaceTroll</option><option>RaceUndead</option></select></label>
+        <label>Talents (wowhead/wowsims string) <input id="talents" placeholder="default for the rotation"></label>
+        <label>Iterations <input id="iters" type="number" value="300" min="50" max="5000" step="50"></label>
+      </div>
+    </details>
+    <button id="go" class="primary">Analyze</button>
+  </section>
+
+  <section id="out" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="card">
+      <h2>Try this next run</h2>
+      <ol id="tips" class="tips"></ol>
+      <p class="hint" id="simnote"></p>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>Abilities</h2><table id="abil"></table></div>
+      <div class="card"><h2>Gear from the log</h2><table id="gear"></table></div>
+    </div>
+  </section>
+</main>
+<footer>
+  <p>Sim: <a href="https://github.com/wowsims/forever" target="_blank" rel="noopener">wowsims/forever</a> <span id="simver"></span>. Priorities follow the wowsims rotations, with checks drawn from the Wowhead and Mobylitics warrior guides.</p>
+</footer>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
