@@ -42,9 +42,18 @@ jobs:
         env:
           GIT_LFS_SKIP_SMUDGE: '1'
           REF: ${{ steps.ref.outputs.ref }}
+      # Install the exact Go that wowsims asks for (its `toolchain` line, else its `go` line), so the build never
+      # has to download a second Go mid-build (that download timed out once and failed the deploy).
+      - name: Read the Go version wowsims needs
+        id: gover
+        run: |
+          v=$(sed -n 's/^toolchain go//p' .wowsims/go.mod)
+          [ -n "$v" ] || v=$(sed -n 's/^go //p' .wowsims/go.mod)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Go $v"
       - uses: actions/setup-go@v5
         with:
-          go-version-file: .wowsims/go.mod
+          go-version: ${{ steps.gover.outputs.version }}
           cache: false
       - uses: actions/setup-python@v5
         with:
@@ -54,6 +63,8 @@ jobs:
           node-version: '22'
       - run: pip install grpcio-tools
       - name: Build the sim
+        env:
+          GOTOOLCHAIN: local
         run: WOWSIMS_DIR=.wowsims SKIP_FETCH=1 scripts/build-sim.sh
       - name: Smoke test (parse the sample log and sim it)
         run: node tests/cooldowns_test.mjs && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
