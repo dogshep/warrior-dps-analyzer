@@ -367,6 +367,16 @@ export function suggestions(a, sim, ideal, castable) {
     if (diff > 2) out.push({ kind: 'consumes', title: `Full consumables are worth about ${fmt(diff)} DPS`, detail: missing ? `Not seen in your log: ${missing}.` : 'Bring the usual warrior consumables.', gain: diff });
   }
 
+  // Two groups. "Play" tips explain the gap between you and the sim on your own gear and consumables ("Room to
+  // grow"); gear and consumable tips come on top of it. Play tips are estimated one at a time and overlap, so if
+  // they add up to more than the gap they are scaled down to share it.
+  for (const t of out) t.group = t.kind === 'gear' || t.kind === 'consumes' ? 'gear' : 'play';
+  const gap = sim ? sim.simDps - a.dps : null;
+  const playSum = sum(out.filter(t => t.group === 'play' && t.gain).map(t => t.gain));
+  if (gap !== null && playSum > Math.max(0, gap)) {
+    const f = Math.max(0, gap) / playSum;
+    for (const t of out) if (t.group === 'play' && t.gain) t.gain *= f;
+  }
   out.sort((x, y) => (y.gain ?? -1) - (x.gain ?? -1));
   return out;
 }

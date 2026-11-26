@@ -99,8 +99,8 @@ async function analyze() {
     const s = compareToSim(mine, names, mine.iterations || iterations);
     const ideal = compareToSim(best, names, best.iterations || iterations);
     ideal.missing = missingConsumes(cons.found);
-    renderStats(a, s);
-    renderTips(suggestions(a, s, ideal, aplSpellNames(apls[a.preset], names)));
+    renderStats(a, s, ideal);
+    renderTips(suggestions(a, s, ideal, aplSpellNames(apls[a.preset], names)), s && s.simDps - a.dps);
     $('simnote').textContent = `${a.isRun ? `Dungeon run: your DPS counts only time in combat, and the sim fights a typical ${Math.round(a.simDur)}s pull, scaled to your ${a.pulls} pulls. ` : ''}Sim: ${a.preset.replace('_', ' ')} rotation, ${iterations} iterations of a ${Math.round(a.simDur || a.dur)}s fight against ${a.targetCount} target${a.targetCount > 1 ? 's' : ''}, with the buffs and consumables seen in your log. Consumables seen: ${cons.found.map(f => f.name).join(', ') || 'none'}.`;
   } catch (e) {
     renderTips(suggestions(a, null, null));
@@ -129,21 +129,28 @@ function renderCooldowns(a) {
     (a.pullSpans ? 'On a dungeon run, "possible" counts one use on each pull of 20s or more (any pull for Bloodrage) that the cooldown was back for, so a fast group is not held against you.' : 'Talent, racial and potion cooldowns only show once the log has you using them.');
 }
 
-function renderStats(a, s) {
+function renderStats(a, s, ideal) {
+  const cons = s && ideal ? ideal.simDps - s.simDps : null;
   const cells = [
     ['Your DPS', fmt(a.dps)],
     ['Sim DPS, your gear', s ? fmt(s.simDps) : '…'],
-    ['Room to grow', s ? (s.simDps > a.dps ? `+${fmt(s.simDps - a.dps)}` : 'at or above sim') : '…', 'gap'],
+    ['Room to grow from play', s ? (s.simDps > a.dps ? `+${fmt(s.simDps - a.dps)}` : 'at or above sim') : '…', 'gap'],
+    ...(cons !== null && cons > 2 ? [['More from full consumables', `+${fmt(cons)}`, 'gap']] : []),
     a.isRun ? ['In combat', `${Math.round(a.dur / 60)} of ${Math.round((a.fight.end - a.fight.start) / 60000)} min, ${a.pulls} pulls`] : ['Fight length', `${Math.round(a.dur)}s`],
     ['Rotation', a.preset.replace('_', ' ')],
   ];
   $('stats').innerHTML = cells.map(([k, v, c]) => `<div class="stat ${c || ''}"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('');
 }
 
-function renderTips(list) {
-  $('tips').innerHTML = list.length
-    ? list.slice(0, 8).map(t => `<li><span class="t">${esc(t.title)}</span>${t.gain ? `<span class="g">≈ +${fmt(t.gain)} DPS</span>` : ''}<div class="d">${esc(t.detail)}</div></li>`).join('')
-    : '<li>Nothing big stands out. Nice work. Push for longer uptime and cleaner cooldown timing.</li>';
+// Play tips first (they share "Room to grow"), then gear and consumables (on top of it).
+function renderTips(list, gap) {
+  const li = (t, i) => `<li${i ? '' : ' value="1"'}><span class="t">${esc(t.title)}</span>${t.gain ? `<span class="g">≈ +${fmt(t.gain)} DPS</span>` : ''}<div class="d">${esc(t.detail)}</div></li>`;
+  const play = list.filter(t => t.group !== 'gear').slice(0, 8), gear = list.filter(t => t.group === 'gear');
+  const head = (title, note) => `<li class="grp"><b>${esc(title)}</b>${note ? `<span>${esc(note)}</span>` : ''}</li>`;
+  $('tips').innerHTML =
+    head('Play', gap > 0 ? `These share your room to grow (+${fmt(gap)}). Each is an estimate, and they overlap.` : '') +
+    (play.length ? play.map(li).join('') : '<li>Nothing big stands out. Nice work. Push for longer uptime and cleaner cooldown timing.</li>') +
+    (gear.length ? head('Gear and consumables', 'On top of your room to grow.') + gear.map(li).join('') : '');
 }
 
 function renderTables(a, names) {
