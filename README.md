@@ -47,3 +47,15 @@ node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis i
 | `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |
 
 Sim by [WoWSims](https://github.com/wowsims/forever) (MIT).
+
+## Warcraft Logs client
+
+Link import needs a Warcraft Logs API client registered to this site, once:
+
+1. Signed in on forever.warcraftlogs.com, open your profile's API clients page and create a client.
+2. Name it (for example "Warrior DPS Analyzer"), set the redirect URL to `https://dogshep.github.io/warrior-dps-analyzer/`, and tick **Public client**.
+3. Put its client id in `WCL_CLIENT_ID` in `web/js/wcl.js`. A client id is not a secret.
+
+For a local copy, add `http://localhost:8000/` as a second redirect URL, or paste your own client id under "Warcraft Logs settings" on the page.
+
+`node tests/wcl_mock.mjs tests/fixture-WoWCombatLog.txt` turns the sample log into Warcraft Logs API responses, for testing the import offline.
