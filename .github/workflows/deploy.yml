@@ -1,7 +1,12 @@
 name: Build sim and deploy
 
 # Rebuilds the wowsims/forever sim to WebAssembly and publishes the page to GitHub Pages.
-# The wowsims version is the git ref in SIM_REF (a branch, tag or commit); "Run workflow" can override it.
+# The wowsims version is the commit in SIM_REF; sim-bump.yml opens a weekly PR when wowsims has new commits.
+# "Run workflow" can build a one-off ref.
+#
+# Security layout: code from wowsims (its build scripts, generated code and lib.wasm) only ever runs in the
+# build-sim job, which has no secrets and only read access. The Worker job holds the Cloudflare and
+# Warcraft Logs secrets and checks out only this repo. Only the final deploy job can publish to Pages.
 on:
   push:
     branches: [main]
@@ -10,23 +15,23 @@ on:
       wowsims_ref:
         description: 'wowsims/forever branch, tag or commit (blank = SIM_REF)'
         required: false
-  schedule:
-    - cron: '0 9 * * 2' # Tuesdays, after the weekly reset, to pick up new sim fixes
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-sim:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Pick the wowsims version
         id: ref
         env:
@@ -34,11 +39,14 @@ jobs:
         run: |
           REF="$INPUT_REF"
           [ -n "$REF" ] || REF="$(tr -d '[:space:]' < SIM_REF)"
+          if ! printf '%s' "$REF" | grep -Eq '^[A-Za-z0-9._][A-Za-z0-9._/-]{0,99}$'; then
+            echo "::error::Not a valid git ref: $REF"; exit 1
+          fi
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
       - name: Fetch wowsims/forever
         run: |
           git clone https://github.com/wowsims/forever .wowsims
-          git -C .wowsims checkout "$REF"
+          git -C .wowsims checkout "$REF" --
         env:
           GIT_LFS_SKIP_SMUDGE: '1'
           REF: ${{ steps.ref.outputs.ref }}
@@ -49,30 +57,56 @@ jobs:
         run: |
           v=$(sed -n 's/^toolchain go//p' .wowsims/go.mod)
           [ -n "$v" ] || v=$(sed -n 's/^go //p' .wowsims/go.mod)
+          if ! printf '%s' "$v" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Unexpected Go version in wowsims go.mod: $v"; exit 1
+          fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Go $v"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: ${{ steps.gover.outputs.version }}
           cache: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - run: pip install grpcio-tools
+      - run: pip install grpcio-tools==1.85.4
       - name: Build the sim
         env:
           GOTOOLCHAIN: local
         run: WOWSIMS_DIR=.wowsims SKIP_FETCH=1 scripts/build-sim.sh
       - name: Smoke test (parse the sample log and sim it)
         run: node tests/cooldowns_test.mjs && node tests/worker_test.mjs && node tests/wcl_proxy_test.mjs && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
-      # Optional: the Worker that loads public Warcraft Logs reports without a sign-in (worker/). It deploys only
-      # when the three secrets exist; without them the page keeps sign-in only.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sim
+          path: web/sim
+          if-no-files-found: error
+          retention-days: 1
+
+  # Optional: the Worker that loads public Warcraft Logs reports without a sign-in (worker/). It deploys only
+  # when the secrets exist; without them the page keeps sign-in only. It never sees any wowsims code.
+  deploy-worker:
+    runs-on: ubuntu-latest
+    # A Worker problem must not stop the site from deploying: the page falls back to sign-in.
+    continue-on-error: true
+    permissions:
+      contents: read
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Test the Worker
+        run: node tests/worker_test.mjs
       - name: Deploy the Warcraft Logs Worker
-        # A Worker problem must not stop the site from deploying: the page falls back to sign-in.
-        continue-on-error: true
+        id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -84,6 +118,8 @@ jobs:
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$WCL_ID" ] || [ -z "$WCL_SECRET" ]; then
             echo "Worker secrets not set; the page keeps Warcraft Logs sign-in only."; exit 0
           fi
+          # Exact wrangler version from package-lock.json; install scripts off.
+          npm ci --ignore-scripts --no-audit --no-fund
           api() { curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' "$@"; }
           acct="$CLOUDFLARE_ACCOUNT_ID"
           [ -n "$acct" ] || acct=$(api https://api.cloudflare.com/client/v4/accounts | jq -r '.result[0].id // empty')
@@ -101,23 +137,52 @@ jobs:
           else
             unset CLOUDFLARE_ACCOUNT_ID
           fi
-          npx --yes wrangler@4 deploy 2>&1 | tee deploy.log
+          npx --no-install wrangler deploy 2>&1 | tee deploy.log
           url=$(grep -o 'https://[A-Za-z0-9.-]*\.workers\.dev' deploy.log | head -1)
           [ -n "$url" ] || { echo "::error::Could not find the Worker address in the wrangler output."; exit 1; }
-          printf '%s' "$WCL_ID" | npx --yes wrangler@4 secret put WCL_CLIENT_ID
-          printf '%s' "$WCL_SECRET" | npx --yes wrangler@4 secret put WCL_CLIENT_SECRET
-          printf '{"url":"%s"}\n' "$url" > ../web/wcl-proxy.json
+          printf '%s' "$WCL_ID" | npx --no-install wrangler secret put WCL_CLIENT_ID
+          printf '%s' "$WCL_SECRET" | npx --no-install wrangler secret put WCL_CLIENT_SECRET
+          echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Worker live at $url"
-      - uses: actions/upload-pages-artifact@v3
+
+  # Puts the page, the built sim and the Worker address together. No secrets, read-only.
+  assemble:
+    needs: [build-sim, deploy-worker]
+    if: ${{ !cancelled() && needs.build-sim.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sim
+          path: web/sim
+      - name: Point the page at the Worker
+        env:
+          URL: ${{ needs.deploy-worker.outputs.url }}
+        run: |
+          if printf '%s' "$URL" | grep -Eq '^https://[A-Za-z0-9.-]+\.workers\.dev$'; then
+            printf '{"url":"%s"}\n' "$URL" > web/wcl-proxy.json
+          else
+            echo "No Worker this run; the page keeps Warcraft Logs sign-in only."
+          fi
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: web
 
   deploy:
-    needs: build
+    needs: assemble
+    if: ${{ !cancelled() && needs.assemble.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
