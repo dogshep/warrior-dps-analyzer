@@ -19,6 +19,12 @@ assert.deepEqual(sent[0], { url: 'https://w.example.workers.dev', body: { op: 'r
 reply = { status: 404, body: { error: 'You do not have permission to view this report.' } };
 await assert.rejects(loadReport('AAAAAAAAAAAAAAAA', fetchImpl), e => e.needsAuth === true);
 
+// Any other Worker failure is reported as it is, not as a sign-in problem.
+reply = { status: 502, body: { error: 'Variable "$actor" is never used.' } };
+await assert.rejects(loadReport('CCCCCCCCCCCCCCCC', fetchImpl), e => !e.needsAuth && /never used/.test(e.message));
+reply = { status: 429, body: { error: 'rate limited' } };
+await assert.rejects(loadReport('DDDDDDDDDDDDDDDD', fetchImpl), e => e.needsAuth === true && /quota/.test(e.message));
+
 // A long fight: each events list pages on its own, gear comes from the first answer, and a second load is cached.
 const pages = { mine: 3, onMe: 2, debuffs: 1, deaths: 1, info: 1 };
 const asked = [];
