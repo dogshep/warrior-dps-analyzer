@@ -79,35 +79,62 @@ end
 -- comes from UnitPowerPercent with a step color curve that is transparent
 -- below the cap and gold at or above it.
 ---------------------------------------------------------------------------
-local rageLabel, rageCurve, rageCurveCap
+local rageLabel, rageHolder, rageCurve, rageCurveKey, previewUntil = nil, nil, nil, nil, 0
+
+local function rageRGB()
+  local c = WT.db and WT.db.rageColor or { 1, 0.82, 0.3 }
+  return c[1], c[2], c[3]
+end
 
 local function rageIndicator()
   if rageLabel then return rageLabel end
   -- Its own frame: the tip frame hides between tips, this line must not.
   local holder = CreateFrame("Frame", "WarriorTipsRageFrame", UIParent)
+  rageHolder = holder
   holder:SetSize(300, 20)
   holder:SetPoint("TOP", _G.WarriorTipsFrame, "BOTTOM", 0, -2)
   rageLabel = holder:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   rageLabel:SetPoint("CENTER")
   rageLabel:SetText("Rage capped: Heroic Strike")
-  rageLabel:SetTextColor(1, 0.82, 0.3, 0)
+  local r, g, b = rageRGB()
+  rageLabel:SetTextColor(r, g, b, 0)
   return rageLabel
 end
 
+function WT.StyleRage(font, size)
+  local label = rageIndicator()
+  pcall(label.SetFont, label, font, size, "OUTLINE")
+  rageHolder:SetSize(math.max(300, size * 22), size + 6)
+  rageCurve = nil   -- the color lives in the curve: rebuild it
+end
+
+-- Show the rage line at full color for a few seconds (after a style change).
+function WT.PreviewRage(sec)
+  local label = rageIndicator()
+  local r, g, b = rageRGB()
+  label:SetTextColor(r, g, b, 1)
+  previewUntil = GetTime() + sec
+  C_Timer.After(sec, function()
+    if GetTime() >= previewUntil and not WT.fight then label:SetTextColor(r, g, b, 0) end
+  end)
+end
+
 local function curveForCap(cap)
-  if rageCurve and rageCurveCap == cap then return rageCurve end
+  local r, g, b = rageRGB()
+  local key = ("%d:%.3f:%.3f:%.3f"):format(cap, r, g, b)
+  if rageCurve and rageCurveKey == key then return rageCurve end
   if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor) then return nil end
   local ok, curve = pcall(C_CurveUtil.CreateColorCurve)
   if not ok or not curve then return nil end
   pcall(curve.SetType, curve, Enum.LuaCurveType.Step)
-  curve:AddPoint(0, CreateColor(1, 0.82, 0.3, 0))
-  curve:AddPoint(cap / 100, CreateColor(1, 0.82, 0.3, 1))
-  rageCurve, rageCurveCap = curve, cap
+  curve:AddPoint(0, CreateColor(r, g, b, 0))
+  curve:AddPoint(cap / 100, CreateColor(r, g, b, 1))
+  rageCurve, rageCurveKey = curve, key
   return curve
 end
 
 local function hideRage()
-  if rageLabel then rageLabel:SetTextColor(1, 0.82, 0.3, 0) end
+  if rageLabel then local r, g, b = rageRGB(); rageLabel:SetTextColor(r, g, b, 0) end
 end
 
 -- Returns true if the display-only indicator is in use (rage is secret).

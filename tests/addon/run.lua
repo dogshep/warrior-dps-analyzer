@@ -163,3 +163,10 @@ for _, m in ipairs(printed) do print("  " .. m) end
 local errors = 0
 for _, m in ipairs(printed) do if m:find("error") and not m:find("^Warrior Tips:   ") then errors = errors + 1 end end
 if errors > 0 then print("FAILED: " .. errors .. " errors"); os.exit(1) end
+
+-- Style commands: size and colors apply without errors.
+for _, c in ipairs({ "size 26", "color red", "ragecolor 00ff88", "color nope", "size 99", "status" }) do
+  SlashCmdList.WARRIORTIPS(c)
+end
+assert(ns.db.fontSize == 40 and ns.db.color[1] == 1 and ns.db.color[2] == 0.25 and math.abs(ns.db.rageColor[3] - 136 / 255) < 1e-6, "style settings")
+print("== style commands ok")
