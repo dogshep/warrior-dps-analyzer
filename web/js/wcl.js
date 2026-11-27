@@ -8,7 +8,7 @@
 
 export const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
 
-import { QUERIES } from './wcl-queries.js';
+import { QUERIES, QUERY_VARS } from './wcl-queries.js';
 
 const SITE = 'https://forever.warcraftlogs.com';
 const AUTHORIZE = `${SITE}/oauth/authorize`;
@@ -171,23 +171,54 @@ export async function loadReport(code, fetchImpl) {
   return { code, title: r.title, warriors, fights, abilities, actors: r.masterData.actors };
 }
 
-// Pages through one events field until Warcraft Logs says there are no more.
-async function allEvents(code, fight, actor, field, fetchImpl) {
-  let start = fight.start, out = [];
-  for (let page = 0; page < 30; page++) {
-    const r = (await gql('events', { code, fight: fight.id, actor, start, end: fight.end }, fetchImpl)).reportData.report;
-    out = out.concat(r[field].data);
-    if (!r[field].nextPageTimestamp) return { first: r, events: out };
-    start = r[field].nextPageTimestamp;
+// Only the variables a query declares (GraphQL refuses extras, and so does the Worker).
+const varsFor = (op, v) => Object.fromEntries(QUERY_VARS[op].map(k => [k, v[k]]));
+
+// Most pages one events list follows before giving up. 50 pages is 500,000 events.
+const MAX_PAGES = 50;
+
+// Pages through one events list until Warcraft Logs says there are no more.
+async function allEvents(op, vars, fetchImpl, maxPages = MAX_PAGES) {
+  let start = vars.start;
+  const out = [];
+  for (let page = 0; page < maxPages; page++) {
+    const list = (await gql(op, varsFor(op, { ...vars, start }), fetchImpl)).reportData.report[op];
+    for (const e of list.data) out.push(e);
+    const next = list.nextPageTimestamp;
+    if (!next || next <= start) return out;
+    start = next;
   }
-  return { events: out };
+  if (maxPages === MAX_PAGES) console.warn(`Warcraft Logs: stopped ${op} after ${maxPages} pages; the rest of the fight is left out.`);
+  return out;
 }
+
+// Fights already downloaded this visit, so pressing Analyze again doesn't fetch them again.
+const fightCache = new Map();
+const FIGHT_CACHE_SIZE = 8;
 
 // Fetches one warrior's fight and returns a parser-shaped object for analyzeFight / buildRequest.
 export async function loadFight(report, warrior, fight, fetchImpl) {
+  const key = `${report.code}|${warrior.id}|${fight.id}|${fight.start}|${fight.end}`;
+  if (!fightCache.has(key)) {
+    const p = fetchFight(report, warrior, fight, fetchImpl);
+    fightCache.set(key, p);
+    p.catch(() => fightCache.delete(key));
+    if (fightCache.size > FIGHT_CACHE_SIZE) fightCache.delete(fightCache.keys().next().value);
+  }
+  return fightCache.get(key);
+}
+
+async function fetchFight(report, warrior, fight, fetchImpl) {
   const actor = warrior.id;
-  const { first, events: mine } = await allEvents(report.code, fight, actor, 'mine', fetchImpl);
-  const r = first;
+  const vars = { code: report.code, fight: fight.id, actor, start: fight.start, end: fight.end };
+  // The lists are independent, so they download side by side.
+  const [mine, onMe, debuffList, deaths, info] = await Promise.all([
+    allEvents('mine', vars, fetchImpl),
+    allEvents('onMe', vars, fetchImpl),
+    allEvents('debuffs', vars, fetchImpl),
+    allEvents('deaths', vars, fetchImpl),
+    allEvents('info', vars, fetchImpl, 1),
+  ]);
   const name = id => report.abilities.get(id) || `Spell ${id}`;
   const guid = String(actor);
 
@@ -219,20 +250,20 @@ export async function loadFight(report, warrior, fight, fetchImpl) {
       p.auras.push({ t, ev: auraEv(e.type), spellId: e.abilityGameID, name: name(e.abilityGameID), src: guid });
     }
   }
-  for (const e of r.onMe.data) {
+  for (const e of onMe) {
     if (e.sourceID === actor) continue; // already in `mine`
     p.auras.push({ t: e.timestamp, ev: auraEv(e.type), spellId: e.abilityGameID, name: name(e.abilityGameID), src: String(e.sourceID) });
   }
-  for (const e of r.debuffs.data) debuffs.push({ t: e.timestamp, ev: auraEv(e.type), spellId: e.abilityGameID, name: name(e.abilityGameID), src: String(e.sourceID), dst: String(e.targetID) });
-  for (const e of r.deaths.data) if (e.targetID === actor) p.deaths.push(e.timestamp);
+  for (const e of debuffList) debuffs.push({ t: e.timestamp, ev: auraEv(e.type), spellId: e.abilityGameID, name: name(e.abilityGameID), src: String(e.sourceID), dst: String(e.targetID) });
+  for (const e of deaths) if (e.targetID === actor) p.deaths.push(e.timestamp);
 
   const combatants = new Map();
-  const info = r.info.data[0];
-  if (info) {
+  const first = info[0];
+  if (first) {
     combatants.set(guid, {
-      time: info.timestamp, guid, faction: info.faction,
-      items: (info.gear || []).map(g => ({ id: g.id || 0, ilvl: g.itemLevel || 0, enchant: g.permanentEnchant || 0, tempEnchant: g.temporaryEnchant || 0 })),
-      auras: (info.auras || []).map(a => a.ability),
+      time: first.timestamp, guid, faction: first.faction,
+      items: (first.gear || []).map(g => ({ id: Number(g.id) || 0, ilvl: Number(g.itemLevel) || 0, enchant: Number(g.permanentEnchant) || 0, tempEnchant: Number(g.temporaryEnchant) || 0 })),
+      auras: (first.auras || []).map(a => a.ability),
     });
   }
   return { players: new Map([[guid, p]]), names, combatants, targetHp, debuffs, source: 'wcl' };
