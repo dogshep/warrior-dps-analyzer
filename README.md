@@ -18,15 +18,20 @@ It runs entirely in your browser:
 
 The page uses whatever version of wowsims/forever the deploy workflow built:
 
-- `SIM_REF` holds the wowsims git ref (`master`, a tag, or a commit). Change it to pin a version.
+- `SIM_REF` holds the wowsims commit the site is built from. Only reviewed commits should go in it, because
+  the build runs wowsims code and the result is served to every visitor.
+- Every Tuesday, **Check for a new sim version** (`.github/workflows/sim-bump.yml`) opens a PR that bumps
+  `SIM_REF` when wowsims `master` has moved, with a link to the upstream changes. Merging it deploys the new sim.
+  This needs **Settings > Actions > General > Allow GitHub Actions to create and approve pull requests**.
 - **Actions > Build sim and deploy > Run workflow** rebuilds now, and can take a one-off ref.
-- The workflow also runs weekly (Tuesdays) to pick up sim fixes on `master`.
+- The deploy keeps wowsims code away from the secrets: the sim is built and tested in a job with no secrets
+  and read-only access, and the Worker is deployed from a separate job that never checks out wowsims.
 
 The page footer shows which wowsims commit is live.
 
 ## Running locally
 
-Needs Go (the version in wowsims' `go.mod`), Python 3 with `pip install grpcio-tools`, and Node.
+Needs Go (the version in wowsims' `go.mod`), Python 3 with `pip install grpcio-tools==1.85.4`, and Node.
 
 ```sh
 scripts/build-sim.sh            # clones wowsims/forever into .wowsims and builds web/sim/

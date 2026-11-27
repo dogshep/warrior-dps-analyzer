@@ -1,0 +1,43 @@
+name: Check for a new sim version
+
+# Weekly: if wowsims/forever master has moved past the commit in SIM_REF, open a PR that bumps SIM_REF.
+# Merging that PR rebuilds and deploys the site, so new sim code only ships after someone looks at it.
+# This job never runs wowsims code; it only reads the commit id.
+# Needs Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
+on:
+  schedule:
+    - cron: '0 9 * * 2' # Tuesdays, after the weekly reset
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Open a PR if wowsims has new commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cur="$(tr -d '[:space:]' < SIM_REF)"
+          new="$(git ls-remote https://github.com/wowsims/forever refs/heads/master | cut -f1)"
+          if ! printf '%s' "$new" | grep -Eq '^[0-9a-f]{40}$'; then echo "::error::Could not read wowsims master"; exit 1; fi
+          if [ "$cur" = "$new" ]; then echo "SIM_REF is already wowsims master ($new)."; exit 0; fi
+          branch="sim-bump/${new:0:12}"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null; then echo "PR branch $branch already exists."; exit 0; fi
+          printf '%s\n' "$new" > SIM_REF
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$branch"
+          git commit -am "Bump wowsims/forever to ${new:0:12}"
+          git push origin "$branch"
+          compare="https://github.com/wowsims/forever/compare/${cur}...${new}"
+          gh pr create --base main --head "$branch" --title "Bump wowsims/forever to ${new:0:12}" \
+            --body "wowsims/forever master moved. Review the upstream changes before merging: $compare
+
+          Merging rebuilds the sim from this commit and deploys the site." \
+            || echo "::warning::Pushed $branch but could not open a PR. Turn on 'Allow GitHub Actions to create and approve pull requests' in Settings > Actions > General, or open it by hand. Upstream changes: $compare"
