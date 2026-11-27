@@ -1,0 +1,9 @@
+# Deployed by .github/workflows/deploy.yml when the CLOUDFLARE_API_TOKEN, WCL_SERVER_CLIENT_ID and
+# WCL_SERVER_CLIENT_SECRET repo secrets exist. The WCL id and secret are set as Worker secrets, never in this file.
+name = "warrior-dps-analyzer-wcl"
+main = "index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "https://dogshep.github.io"
