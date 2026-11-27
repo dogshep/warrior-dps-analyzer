@@ -131,10 +131,15 @@ async function viaProxy(url, op, variables, fetchImpl) {
   const res = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op, variables }) });
   const data = await res.json().catch(() => ({}));
   if (res.ok && data.data?.reportData?.report) return data.data;
-  // Private reports (and an exhausted shared quota) need the viewer's own sign-in.
-  const e = new Error(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report needs a Warcraft Logs sign-in (it may be private).');
-  e.needsAuth = true;
-  throw e;
+  // Private reports (404) and an exhausted shared quota (429) need the viewer's own sign-in.
+  if (res.status === 404 || res.status === 429) {
+    const e = new Error(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report needs a Warcraft Logs sign-in (it may be private).');
+    e.needsAuth = true;
+    throw e;
+  }
+  // Anything else is not about sign-in: say what went wrong.
+  const why = typeof data.error === 'string' && data.error ? data.error.slice(0, 200) : `error ${res.status}`;
+  throw new Error(`Warcraft Logs could not load this (${why}). Try again in a minute.`);
 }
 
 let apiUrl = null;

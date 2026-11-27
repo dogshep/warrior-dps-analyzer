@@ -23,8 +23,8 @@ export const QUERIES = {
   // Debuffs on enemies (armor, attack speed and so on).
   debuffs: events('debuffs', false, 'dataType: Debuffs, hostilityType: Enemies, ', 10000),
   deaths: events('deaths', false, 'dataType: Deaths, ', 10000),
-  // Gear and auras at the start of the fight. One page is enough.
-  info: events('info', true, 'dataType: CombatantInfo, ', 100),
+  // The warrior's gear and auras at the start of the fight. One page is enough.
+  info: events('info', true, 'sourceID: $actor, dataType: CombatantInfo, ', 100),
 };
 
 // The variables each query takes. The page sends only these, and the Worker accepts only these.

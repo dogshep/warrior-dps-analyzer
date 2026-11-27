@@ -73,6 +73,9 @@ async function sha(text) {
 const GOOD_START = /^\s*\{\s*"data"\s*:\s*\{\s*"reportData"\s*:\s*\{\s*"report"\s*:\s*\{/;
 const looksGood = text => GOOD_START.test(text.slice(0, 200)) && !text.slice(-4096).includes('"errors"');
 
+// Warcraft Logs' wording for a report the site's client can't see.
+const PRIVATE = /permission|private|does not exist|not found/i;
+
 function errorOf(text) {
   try { const d = JSON.parse(text.length > 100000 ? '{}' : text); return { message: d.errors?.[0]?.message, noReport: d.data?.reportData?.report === null }; } catch { return {}; }
 }
@@ -125,10 +128,12 @@ export default {
         return new Response(out, { status: 200, headers: { 'Content-Type': 'application/json', ...cors } });
       }
       const err = errorOf(out);
-      // A private report, or one this API address doesn't know.
-      last = { status: 404, data: { error: err.message || `Warcraft Logs answered ${res.status}` } };
+      // 404 means a private report, or one this API address doesn't know: the page asks the viewer to sign in.
+      // Anything else (a bad query, a Warcraft Logs outage) is a 502, so the page doesn't blame the report.
+      const missing = res.ok && (err.noReport || PRIVATE.test(err.message || ''));
+      last = { status: missing ? 404 : 502, data: { error: err.message || `Warcraft Logs answered ${res.status}` } };
       // Only a missing report is worth asking the other address about; a bad query would fail there too.
-      if (!(res.ok && err.noReport)) break;
+      if (!missing) break;
     }
     if (last.status === 404) remember(JSON.stringify(last.data), 404, FAIL_CACHE_SECONDS);
     return json(last.data, last.status, cors);

@@ -70,7 +70,8 @@ assert.equal(calls.length, n);
 reportReply = { errors: [{ message: 'Variable "$start" got invalid value' }] };
 n = calls.length;
 r = await worker.fetch(req({ op: 'report', variables: { code: 'BBBBBBBBBBBBBBBB' } }), env, ctx);
-assert.equal(r.status, 404);
+// It's a 502, not a 404, so the page doesn't tell the viewer the report is private.
+assert.equal(r.status, 502);
 assert.equal(calls.length, n + 1);
 
 // An expired token is replaced and the request retried once.
