@@ -36,6 +36,9 @@ local function meterBreakdown()
   return { total = total, spells = spells }
 end
 
+-- "1 cast", "3 casts"
+local function count(n, word) return ("%d %s%s"):format(n, word, n == 1 and "" or "s") end
+
 local function castsOf(f, name)
   local id = WT.spells[name]
   return id and f.casts[id] or 0
@@ -72,7 +75,7 @@ local function report(f)
   -- Execute phase: how many Executes from the first Execute window to the end.
   if f.execStart then
     local execDur = f.stop - f.execStart
-    table.insert(lines, ("Execute phase %ds: %d Executes."):format(math.floor(execDur + 0.5), f.execCasts))
+    table.insert(lines, ("Execute phase %ds: %s."):format(math.floor(execDur + 0.5), count(f.execCasts, "Execute")))
     if f.execCasts == 0 and execDur > 4 then
       table.insert(advice, "The Execute phase came but you never cast Execute. Below 20% it is your main button.")
     end
@@ -86,8 +89,8 @@ local function report(f)
       if n > 0 and len then
         local possible = math.floor(active / len) + 1
         if n / possible < 0.7 then
-          table.insert(advice, ("%s: %d casts, about %d possible. Press it the moment it comes off cooldown.")
-            :format(name, n, possible))
+          table.insert(advice, ("%s: %s, about %d possible. Press it the moment it comes off cooldown.")
+            :format(name, count(n, "cast"), possible))
         end
       end
     end
@@ -145,13 +148,13 @@ function debugReport(f, meter)
   for _, c in ipairs(casts) do parts[#parts + 1] = c.name .. " " .. c.n end
   P("casts: " .. (#parts > 0 and table.concat(parts, ", ") or "none seen"))
   local execAt = f.execStart or f.execStartAny
-  P(execAt and ("execute phase from %.0fs (%s target), %d Executes"):format(execAt - f.start,
-    f.execStart and "boss/elite" or "normal", f.execCasts) or "execute phase: not seen")
+  P(execAt and ("execute phase from %.0fs (%s target), %s"):format(execAt - f.start,
+    f.execStart and "boss/elite" or "normal", count(f.execCasts, "Execute")) or "execute phase: not seen")
   local active = (execAt or f.stop) - f.start
   for _, name in ipairs(MAIN_ATTACKS) do
     if WT.Knows(name) then
       local len = WT.CooldownLength(name)
-      P(("%s: %d casts, about %d possible in %.0fs (cooldown %ss)"):format(name, castsOf(f, name),
+      P(("%s: %s, about %d possible in %.0fs (cooldown %ss)"):format(name, count(castsOf(f, name), "cast"),
         math.floor(active / len) + 1, active, tostring(len)))
     end
   end
@@ -159,9 +162,9 @@ function debugReport(f, meter)
     if WT.Knows(name) then
       local atPull = f.pullReady[name]
       local now = WT.CooldownLeftTracked(name)
-      P(("%s: at pull %s, cast %d, now %s, length %ss"):format(name,
+      P(("%s: at pull %s, used %s, now %s, length %ss"):format(name,
         atPull == nil and "unknown" or atPull == 0 and "ready" or ("%ds left"):format(atPull),
-        castsOf(f, name), now == nil and "unknown" or now == 0 and "ready" or ("%ds left"):format(now),
+        count(castsOf(f, name), "time"), now == nil and "unknown" or now == 0 and "ready" or ("%ds left"):format(now),
         tostring(WT.CooldownLength(name))))
     end
   end

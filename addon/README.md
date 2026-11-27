@@ -28,10 +28,15 @@ A tip whose data is hidden stays quiet; nothing errors. There are at least 4 sec
 
 After a boss fight (or every fight over 15 s with `/wtips report all`) the chat report card shows fight length, DPS and your top damage sources from Blizzard's damage meter, how many Executes you cast in the Execute phase, Bloodthirst / Mortal Strike / Whirlwind casts against how many were possible, whether Death Wish / Recklessness were ready and unused, and Battle Shout downtime. Cooldown use is only judged on bosses, because on dungeon trash the group's pace decides whether cooldowns are back.
 
+## Options window
+
+Type `/wtips` (or open Esc > Options > AddOns > Warrior Tips) for the options window. It has every setting: tips on or off one by one, sound, when to print the report card, debug mode, text size, rage cap, tip and rage line colors (click a swatch for the color picker), plus buttons to move the tips, show a test tip and run the probe. The slash commands below do the same things, and the window updates when you use them.
+
 ## Commands
 
 ```
-/wtips                     help
+/wtips                     open the options window
+/wtips help                list the commands
 /wtips on | off            all live tips on or off
 /wtips tip <name> on|off   execute, cooldowns, rage, shout, reactive
 /wtips report boss|all|off when to print the report card (all = every fight over 15 s)
