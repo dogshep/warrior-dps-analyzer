@@ -18,13 +18,14 @@ local function check(fn, ...)
   if type(a) == "table" then
     for _, v in pairs(a) do if WT.IsSecret(v) then return "secret (fields)" end end
   end
-  return a == nil and "readable (nil)" or "readable"
+  return a == nil and "nil (missing or hidden)" or "readable"
 end
 
 local function sample()
   local s = {}
   local id = WT.spells
   s["Rage (UnitPower)"] = check(UnitPower, "player", Enum.PowerType.Rage)
+  s["Rage indicator (color curve)"] = WT.RageIndicatorWorks and WT.RageIndicatorWorks() or "missing"
   s["Player health (UnitHealth)"] = check(UnitHealth, "player")
   s["Target health (UnitHealth)"] = UnitExists("target") and check(UnitHealth, "target") or "no target"
   s["Target classification"] = UnitExists("target") and check(UnitClassification, "target") or "no target"

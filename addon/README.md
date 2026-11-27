@@ -14,17 +14,19 @@ Type `/wtips probe`, then hit a target dummy or a mob for 5+ seconds. When comba
 
 ## Tips
 
-| Tip | Setting | Needs |
+What Forever lets addons read in combat (probe run on 2026-11-27): spell usability, target classification and the spell id of your own casts are readable; rage, health, cooldowns and buffs are secret. The tips are built around that:
+
+| Tip | Setting | How it knows |
 | --- | --- | --- |
-| "Execute phase" when Execute becomes usable on a boss or elite, with Recklessness / Death Wish if they're ready on a boss | `execute` (on) | Spell usability, which is not secret |
-| "Boss pull: Death Wish ready" when a boss encounter starts or you target a skull-level boss | `cooldowns` (on) | Cooldowns, read just before combat restrictions switch on |
-| "Rage capped: queue Heroic Strike" after 1.5 s at the rage cap | `rage` (on) | Rage readable in combat (the probe tells you) |
-| "Battle Shout drops in 5s" / "Battle Shout is down" | `shout` (on) | Battle Shout aura readable in combat, or your own casts visible |
+| "Execute phase" when Execute becomes usable on a boss or elite, with Recklessness / Death Wish if they're ready on a boss | `execute` (on) | Spell usability |
+| "Boss pull: Death Wish ready" when a boss encounter starts or you target a skull-level boss, and "Death Wish is ready again" mid boss fight | `cooldowns` (on) | A clean cooldown read just before combat restrictions switch on, plus your own casts and the cooldown length (learned from out-of-combat reads, so talents count) |
+| "Rage capped: Heroic Strike" line under the tips while rage is at the cap | `rage` (on) | Rage is secret, so the game colors this line from your rage through a color curve: it is invisible below the cap and gold at or above it. Display only, so it is not counted in the report |
+| "Battle Shout drops in 5s" / "Battle Shout is down" | `shout` (on) | The buff's time left before the pull, plus your own Battle Shout casts |
 | "Overpower!" / "Revenge!" when they light up | `reactive` (off) | Spell usability |
 
-A tip whose data is secret stays quiet; nothing errors. There are at least 4 seconds between any two tips and each tip has its own repeat cooldown.
+A tip whose data is hidden stays quiet; nothing errors. There are at least 4 seconds between any two tips and each tip has its own repeat cooldown.
 
-After a boss fight (or every fight over 15 s with `/wtips report all`) the chat report card shows fight length, DPS, your top damage sources from Blizzard's damage meter, whether Death Wish / Recklessness were ready and unused, time at the rage cap, and Battle Shout downtime. Cooldown use is only judged on bosses, because on dungeon trash the group's pace decides whether cooldowns are back.
+After a boss fight (or every fight over 15 s with `/wtips report all`) the chat report card shows fight length, DPS and your top damage sources from Blizzard's damage meter, how many Executes you cast in the Execute phase, Bloodthirst / Mortal Strike / Whirlwind casts against how many were possible, whether Death Wish / Recklessness were ready and unused, and Battle Shout downtime. Cooldown use is only judged on bosses, because on dungeon trash the group's pace decides whether cooldowns are back.
 
 ## Commands
 
@@ -45,4 +47,4 @@ Settings are per character. Spell names are matched in English, so a non-English
 
 ## Testing offline
 
-`lua5.1 tests/addon/run.lua` runs the addon against a mocked Forever API through a boss fight and prints the tips and the report card. `lua5.1 tests/addon/run.lua secret` does the same with rage, auras and cooldowns secret in combat, to check that tips degrade quietly.
+`lua5.1 tests/addon/run.lua` runs the addon against a mocked Forever API through a boss fight and prints the tips and the report card. `lua5.1 tests/addon/run.lua secret` does the same with what the probe found on Forever: rage, health and cooldowns secret in combat, buffs coming back empty, own casts readable.
