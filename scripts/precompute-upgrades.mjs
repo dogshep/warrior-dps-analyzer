@@ -112,9 +112,12 @@ function groupOf(it, raidZones) {
 }
 
 // A level 60 rare or better a warrior can equip, with something for a DPS warrior on it, that the item database
-// says how to get. Random-suffix items are skipped (their stats depend on the suffix).
+// says how to get. Random-suffix items are skipped (their stats depend on the suffix). Only phase 1 items: wowsims
+// marks an item phase 1 when it can be had in Forever now, and Unknown (2) when it can't yet: drops from every raid
+// but Onyxia's Lair and Mount Hyjal, rewards of events Forever does not hold, and anything that needs those.
 function usable(it) {
   const so = it.scalingOptions?.['0'] || {};
+  if (it.phase !== 1) return false;
   if ((it.quality || 0) < 3 || (so.ilvl || 0) < 55 || !(it.sources || []).length || it.randomSuffixOptions) return false;
   if (it.classAllowlist && !it.classAllowlist.includes(1)) return false;
   const t = it.type || 0;

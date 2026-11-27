@@ -216,7 +216,7 @@ function renderTables(a, names) {
         if (!it || !it.id) return '';
         const n = names.items[it.id];
         const id = Number(it.id) || 0;
-        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/classic/item=${id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${id} <span class="warn">(not in sim)</span>`}</td><td>${enchCell(it, si)}</td></tr>`;
+        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/forever/item=${id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${id} <span class="warn">(not in sim)</span>`}</td><td>${enchCell(it, si)}</td></tr>`;
       }).join('')
     : '<tr><td class="warn">No gear in this log. Turn on Advanced Combat Logging.</td></tr>';
 }
@@ -360,10 +360,10 @@ async function findUpgrades() {
 
 function renderUpgrades(rows, gear, names, cands) {
   const tags = id => {
-    const [, , phase, group] = upgradeTable.items[id] || [];
-    return (group === 'raid' ? '<span class="tag">Raid</span>' : group === 'pvp' ? '<span class="tag">PvP</span>' : '') + (phase > 1 ? `<span class="tag">Phase ${Number(phase)}</span>` : '');
+    const [, , , group] = upgradeTable.items[id] || [];
+    return (group === 'raid' ? '<span class="tag">Raid</span>' : group === 'pvp' ? '<span class="tag">PvP</span>' : '');
   };
-  const link = id => `<a href="https://www.wowhead.com/classic/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[0] || `#${id}`)}</a>`;
+  const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[0] || `#${id}`)}</a>`;
   const found = new Set(rows.map(r => r.slot));
   const none = [...new Set(cands.map(c => c.slot))].filter(s => !found.has(s)).map(s => SLOT_NAMES[s]);
   $('upgOut').innerHTML = (rows.length

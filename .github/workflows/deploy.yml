@@ -78,7 +78,7 @@ jobs:
           GOTOOLCHAIN: local
           SKIP_UPGRADES: '1'
         run: WOWSIMS_DIR=.wowsims SKIP_FETCH=1 scripts/build-sim.sh
-      # The ranked item list behind "Gear upgrades" takes about 13 minutes, so it is cached. It only changes with
+      # The ranked item list behind "Gear upgrades" takes about 11 minutes, so it is cached. It only changes with
       # the wowsims commit or the code that ranks items.
       - name: Key for the upgrade list
         id: upkey
