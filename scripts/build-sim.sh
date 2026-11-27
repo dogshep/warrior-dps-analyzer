@@ -2,7 +2,8 @@
 # Builds the wowsims/forever warrior sim to WebAssembly and copies the data the page needs into web/sim/.
 # Usage: scripts/build-sim.sh [git-ref]   (default: the commit in SIM_REF)
 # WOWSIMS_DIR reuses an existing wowsims checkout; SKIP_FETCH=1 builds it as it is checked out.
-# Needs: git, Go (the version in wowsims/forever's go.mod), python3 with grpcio-tools, protoc-gen-go.
+# SKIP_UPGRADES=1 skips the slow gear ranking (scripts/precompute-upgrades.mjs) for the upgrades section.
+# Needs: git, Go (the version in wowsims/forever's go.mod), python3 with grpcio-tools, protoc-gen-go, Node 22.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REF="${1:-$(tr -d '[:space:]' < "$ROOT/SIM_REF")}"
@@ -42,4 +43,8 @@ sha=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
 date=subprocess.check_output(["git","log","-1","--format=%cI"],text=True).strip()
 json.dump({"repo":"wowsims/forever","commit":sha,"commitDate":date,"builtAt":datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")},open(sys.argv[1],"w"),indent=1)
 PY
+# The ranked item list behind "Gear upgrades" (about 14 minutes on 4 cores). SKIP_UPGRADES=1 leaves it out.
+if [ -z "${SKIP_UPGRADES:-}" ]; then
+  node "$ROOT/scripts/precompute-upgrades.mjs" assets/database/db.json "$OUT"
+fi
 echo "Built sim from wowsims/forever $(git rev-parse --short HEAD) into $OUT"

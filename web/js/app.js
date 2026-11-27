@@ -1,6 +1,7 @@
 import { parseFile } from './logparser.js';
 import * as wcl from './wcl.js';
 import { mmss } from './cooldowns.js';
+import { pickCandidates, swapRequest, bestPerSlot } from './upgrades.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
@@ -22,27 +23,37 @@ let worker, nextId = 0;
 const pending = new Map();
 const MAX_ITERATIONS = 5000;
 
-// Stops a running sim: the worker is thrown away (a new one starts on the next run).
+// Extra workers for the upgrade sims, which run side by side (one per spare CPU core, up to 4).
+let extra = [];
+
+// Stops running sims: the workers are thrown away (new ones start on the next run).
 function cancelSim() {
-  if (!worker) return;
-  worker.terminate();
+  if (!worker && !extra.length) return;
+  for (const w of [worker, ...extra]) w && w.terminate();
   worker = null;
+  extra = [];
   for (const p of pending.values()) { const e = new Error('Sim cancelled.'); e.cancelled = true; p.reject(e); }
   pending.clear();
 }
 
-function sim(request, onProgress) {
-  if (!worker) {
-    worker = new Worker('js/sim-worker.js');
-    worker.onmessage = ({ data: m }) => {
-      const p = pending.get(m.id);
-      if (!p) return;
-      if (m.progress) { p.onProgress && p.onProgress(m.progress); return; }
-      pending.delete(m.id);
-      m.error ? p.reject(new Error(m.error)) : p.resolve(m.result);
-    };
-  }
-  return new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject, onProgress }); worker.postMessage({ id, request }); });
+function newWorker() {
+  const w = new Worker('js/sim-worker.js');
+  w.onmessage = ({ data: m }) => {
+    const p = pending.get(m.id);
+    if (!p) return;
+    if (m.progress) { p.onProgress && p.onProgress(m.progress); return; }
+    pending.delete(m.id);
+    m.error ? p.reject(new Error(m.error)) : p.resolve(m.result);
+  };
+  return w;
+}
+
+// w: which worker (0 is the main one, 1.. the extra ones).
+function sim(request, onProgress, w = 0) {
+  if (!worker) worker = newWorker();
+  while (w > extra.length) extra.push(newWorker());
+  const target = w ? extra[w - 1] : worker;
+  return new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject, onProgress }); target.postMessage({ id, request }); });
 }
 
 // The progress bar under "Try this next run": label plus a 0..1 fill.
@@ -52,6 +63,8 @@ function showProgress(label, done) {
 
 // The loaded source: a parsed log file, or a Warcraft Logs report whose fights load on demand.
 let parser = null, report = null;
+// The last analyzed fight, for "Find upgrades": {a, parser, opts, msPerIter}.
+let last = null;
 
 async function load(file) {
   cancelSim();
@@ -96,6 +109,8 @@ async function analyze() {
   const opts = { iterations, race: $('race').value || undefined, talents: $('talents').value.trim() || undefined };
 
   $('out').hidden = false;
+  last = null;
+  resetUpgrades();
   renderStats(a, null);
   renderTables(a, names);
   renderCooldowns(a);
@@ -109,7 +124,11 @@ async function analyze() {
       ? (done >= 1 ? showProgress('Starting the sim engine…', 1) : showProgress(`Downloading the sim (first run only)… ${Math.round(done * 100)}%`, done))
       : showProgress(`${label}… ${Math.round(((run + done) / 2) * 100)}%`, (run + done) / 2);
     const mine = await sim(buildRequest(a, parser, names, apls, opts), step(0, `Simming your gear (${iterations} fights)`));
+    const t1 = performance.now();
     const best = await sim(buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' }), step(1, 'Simming with full consumables'));
+    // The second run never includes the download, so it times the sim itself, for the upgrades estimate.
+    last = { a, parser, opts, msPerIter: (performance.now() - t1) / (best.iterations || iterations) };
+    resetUpgrades();
     const s = compareToSim(mine, names, mine.iterations || iterations);
     const ideal = compareToSim(best, names, best.iterations || iterations);
     ideal.missing = missingConsumes(cons.found);
@@ -197,7 +216,7 @@ function renderTables(a, names) {
         if (!it || !it.id) return '';
         const n = names.items[it.id];
         const id = Number(it.id) || 0;
-        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/classic/item=${id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${id} <span class="warn">(not in sim)</span>`}</td><td>${enchCell(it, si)}</td></tr>`;
+        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/forever/item=${id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${id} <span class="warn">(not in sim)</span>`}</td><td>${enchCell(it, si)}</td></tr>`;
       }).join('')
     : '<tr><td class="warn">No gear in this log. Turn on Advanced Combat Logging.</td></tr>';
 }
@@ -248,5 +267,115 @@ $('wclClient').onchange = () => {
 };
 $('wclOut').onclick = () => { wcl.signOut(); $('wclStatus').textContent = 'Signed out of Warcraft Logs.'; };
 wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
+// Gear upgrades. Each candidate is one sim of the player's gear with one item swapped, compared with a sim of their
+// current gear. Two sims of different gear drift apart in their random rolls, so the fight count sets how
+// precise a gain is: it is picked so the whole run takes about UPGRADE_TARGET_MS, within these bounds.
+const UPGRADE_ITERS = { min: 200, max: 1000 };
+const UPGRADE_TARGET_MS = 60000;
+// A hard stop: whatever is done by then is shown.
+const UPGRADE_TIME_CAP_MS = 120000;
+const UPGRADE_WORKERS = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+let upgradeTable = null;
+
+// The ticked source kinds, as the letters upgrades.json uses.
+function upgradeKinds() { return [...document.querySelectorAll('.upgKind:checked')].map(el => el.value).join(''); }
+
+// Fights per candidate for n candidates (the current gear is simmed at twice that), and the time it should take.
+function upgradePlan(n) {
+  const units = n + 2;
+  const fit = (UPGRADE_TARGET_MS * UPGRADE_WORKERS) / (last.msPerIter * units);
+  const iters = Math.max(UPGRADE_ITERS.min, Math.min(UPGRADE_ITERS.max, Math.floor(fit / 100) * 100));
+  return { iters, ms: (units * iters * last.msPerIter) / UPGRADE_WORKERS };
+}
+
+function resetUpgrades() {
+  $('upgOut').innerHTML = '';
+  $('upgNote').textContent = '';
+  $('upgGo').disabled = !last;
+  if (!last) { $('upgEta').textContent = ''; return; }
+  const n = Number($('upgMax').value), plan = upgradePlan(n);
+  $('upgEta').textContent = `Up to ${n} items, ${plan.iters} fights each: about ${Math.max(1, Math.round(Math.min(plan.ms, UPGRADE_TIME_CAP_MS) / 1000))}s.`;
+}
+
+async function findUpgrades() {
+  if (!last) return;
+  const { names, apls } = await data;
+  const { a, opts } = last;
+  $('upgGo').disabled = true;
+  $('upgCancel').hidden = false;
+  $('upgNote').textContent = '';
+  const bar = (label, done) => ($('upgOut').innerHTML = `<p class="hint">${esc(label)}</p><div class="bar"><span style="width:${Math.round(done * 100)}%"></span></div>`);
+  bar('Loading the upgrade list…', 0);
+  let timer = null;
+  try {
+    upgradeTable ??= await fetch('sim/upgrades.json').then(r => { if (!r.ok) throw new Error('No upgrade list in this build of the page.'); return r.json(); });
+    const probe = buildRequest(a, last.parser, names, apls, opts);
+    const gear = probe.raid.parties[0].players[0].equipment.items;
+    if (!gear.some(g => g.id)) throw new Error('No gear in this log, so there is nothing to compare against.');
+    const cands = pickCandidates(gear, upgradeTable, a.preset, a.combatant?.faction, { max: Number($('upgMax').value), kinds: upgradeKinds() });
+    if (!cands.length) { $('upgOut').innerHTML = `<p>${upgradeKinds() ? 'Nothing in the upgrade list beats what you wear from these sources. Try ticking more of them.' : 'Tick at least one source.'}</p>`; return; }
+    const { iters } = upgradePlan(cands.length);
+    const base = buildRequest(a, last.parser, names, apls, { ...opts, iterations: iters });
+    const t0 = performance.now();
+    // Progress in units of one candidate sim; the current gear counts twice.
+    const total = cands.length + 2, done = new Map();
+    const tick = (k, w) => ({ stage, done: f }) => {
+      if (stage !== 'sim') return;
+      done.set(k, f * w);
+      const sum = [...done.values()].reduce((x, y) => x + y, 0);
+      bar(`Simming ${cands.length} possible upgrades and your current gear, ${iters} fights each, on ${UPGRADE_WORKERS} thread${UPGRADE_WORKERS > 1 ? 's' : ''}… ${Math.round((performance.now() - t0) / 1000)}s`, sum / total);
+    };
+    let capped = false;
+    timer = setTimeout(() => { capped = true; cancelSim(); }, UPGRADE_TIME_CAP_MS);
+    const queue = [{ k: 'base', req: { ...base, simOptions: { ...base.simOptions, iterations: iters * 2 } }, w: 2 }, ...cands.map((c, i) => ({ k: i, c, req: swapRequest(base, c.slot, c.id), w: 1 }))];
+    const out = new Map();
+    await Promise.all(Array.from({ length: UPGRADE_WORKERS }, async (_, w) => {
+      for (let job; (job = queue.shift());) {
+        try {
+          const r = await sim(job.req, tick(job.k, job.w), w);
+          out.set(job.k, { ...r.raidMetrics.parties[0].players[0].dps, n: r.iterations });
+        } catch (e) { if (!e.cancelled) throw e; return; }
+      }
+    }));
+    clearTimeout(timer);
+    const secs = (performance.now() - t0) / 1000;
+    const b = out.get('base');
+    if (!b) throw Object.assign(new Error('cancelled'), { cancelled: !capped, capped });
+    const results = cands.flatMap((c, i) => {
+      const r = out.get(i);
+      return r ? [{ ...c, dps: r.avg, err: Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n) }] : [];
+    });
+    renderUpgrades(bestPerSlot(results, b.avg), gear, names, cands.filter((c, i) => out.has(i)));
+    $('upgNote').textContent = `Simmed ${results.length} item${results.length === 1 ? '' : 's'} (${iters} fights each) and your current gear (${iters * 2}) in ${secs.toFixed(1)}s on ${UPGRADE_WORKERS} thread${UPGRADE_WORKERS > 1 ? 's' : ''}.` +
+      (capped ? ` Stopped at the ${UPGRADE_TIME_CAP_MS / 1000}s limit; ${cands.length - results.length} were not simmed.` : '') +
+      ` ± is the sim's margin for each gain (95%). The candidates were picked from items ranked ahead of time in pre-raid gear.`;
+  } catch (e) {
+    $('upgOut').innerHTML = e.capped ? `<p class="hint">The sim of your current gear did not finish within ${UPGRADE_TIME_CAP_MS / 1000}s. Try fewer items.</p>`
+      : e.cancelled ? '<p class="hint">Cancelled.</p>' : `<p class="warn">${esc(e.message || e)}</p>`;
+  } finally {
+    clearTimeout(timer);
+    $('upgGo').disabled = !last;
+    $('upgCancel').hidden = true;
+  }
+}
+
+function renderUpgrades(rows, gear, names, cands) {
+  const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
+  const tags = id => [...(upgradeTable.items[id]?.[3] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
+  const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[0] || `#${id}`)}</a>`;
+  const found = new Set(rows.map(r => r.slot));
+  const none = [...new Set(cands.map(c => c.slot))].filter(s => !found.has(s)).map(s => SLOT_NAMES[s]);
+  $('upgOut').innerHTML = (rows.length
+    ? '<table><tr><th>Slot</th><th>Upgrade</th><th class="n">DPS</th><th>Where to get it</th></tr>' + rows.map(r => {
+        const cur = gear[r.slot]?.id;
+        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[0] || `#${cur}`)}</div>` : ''}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[0] || '')}</td></tr>`;
+      }).join('') + '</table>'
+    : '<p>None of the likely upgrades beat your current gear in the sim.</p>') +
+    (none.length ? `<p class="hint">Simmed but not an upgrade in your gear: ${esc(none.join(', '))}.</p>` : '');
+}
+
+$('upgGo').onclick = findUpgrades;
+$('upgCancel').onclick = cancelSim;
+$('upgMax').onchange = () => { if (last && !$('upgOut').innerHTML) resetUpgrades(); };
 $('go').onclick = analyze;
 $('cancel').onclick = cancelSim;

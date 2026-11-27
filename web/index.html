@@ -67,6 +67,26 @@
       <div id="cds" class="cds"></div>
       <p class="hint" id="cdnote"></p>
     </div>
+    <div class="card" id="upg">
+      <h2>Gear upgrades</h2>
+      <p class="hint">The best next item for each slot and where to get it. A short list of likely upgrades, ranked ahead of time, is simmed in your own gear and fight, with your enchants kept on the slot.</p>
+      <div class="row inline opts">
+        <span class="hint">Sources:</span>
+        <label class="chk"><input type="checkbox" class="upgKind" value="d" checked> Dungeons</label>
+        <label class="chk"><input type="checkbox" class="upgKind" value="r" checked> Raids</label>
+        <label class="chk"><input type="checkbox" class="upgKind" value="c" checked> Crafted</label>
+        <label class="chk"><input type="checkbox" class="upgKind" value="q" checked> Quests</label>
+        <label class="chk"><input type="checkbox" class="upgKind" value="v" checked> Vendors</label>
+        <label class="chk"><input type="checkbox" class="upgKind" value="f" checked> Reputation</label>
+        <label class="chk"><input type="checkbox" class="upgKind" value="p"> PvP</label>
+      </div>
+      <div class="row inline opts">
+        <label class="chk">Items to sim <select id="upgMax"><option>8</option><option selected>16</option><option>24</option></select></label>
+      </div>
+      <button id="upgGo" class="primary" disabled>Find upgrades</button> <button id="upgCancel" hidden>Cancel</button> <span class="hint" id="upgEta"></span>
+      <div id="upgOut"></div>
+      <p class="hint" id="upgNote"></p>
+    </div>
     <div class="grid">
       <div class="card"><h2>Abilities</h2><table id="abil"></table></div>
       <div class="card"><h2>Gear from the log</h2><table id="gear"></table></div>

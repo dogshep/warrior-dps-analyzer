@@ -8,6 +8,24 @@ It runs entirely in your browser:
 2. **Sims your exact gear** with [wowsims/forever](https://github.com/wowsims/forever), compiled to WebAssembly, using the wowsims Fury, Fury 2H or Arms rotation, the fight's length and target count, and the buffs and consumables seen in the log.
 3. **Compares you to the sim.** For each ability it compares your casts to the sim's and prices the gap using your own damage per cast. It also checks cooldowns (Death Wish, Recklessness, Bloodrage, racials), Battle Shout uptime, rage capping, time spent not attacking, deaths, missing enchants and missing consumables.
 4. **Ranks the suggestions** by estimated DPS gained.
+5. **Finds gear upgrades** on request: the best next item per slot and where it drops, is crafted or sold.
+
+## How gear upgrades are found
+
+Simming every item for every player would take far too long, so the work is split in two.
+
+- **At build time** (`scripts/precompute-upgrades.mjs`, about 14 minutes on 4 cores, cached in CI by wowsims commit):
+  for each rotation it sims stat weights in the wowsims pre-raid gear, prices every level 60 rare or better item a
+  warrior can use and can get in Forever now (wowsims' phase 1: no drops from raids Forever hasn't opened) with them, and sims the ones weights can't price (weapons, procs, on-use effects) swapped into
+  that gear. The result, with each item's sources from the wowsims item database, is `web/sim/upgrades.json`.
+- **In the browser** the page takes the best one or two of those per slot that beat what the player wears (8, 16
+  or 24 in all) from the sources ticked (dungeons, raids, crafted, quests, vendors, reputation, PvP), sims each one
+  swapped into the player's own gear and fight, and lists the real gains.
+
+Two sims of different gear don't share their dice rolls, so a gain from 100 fights is only good to about ±13 DPS.
+The page picks the fight count (200 to 1,000) so the run takes about a minute, runs sims side by side on spare
+CPU cores (up to 4), shows the margin on each gain, and stops at 2 minutes whatever happens. In headless
+Chromium on 4 cores the sample log takes about 50 to 55 seconds for 8, 16 or 24 items.
 
 ## Recording a good log
 
@@ -34,7 +52,7 @@ The page footer shows which wowsims commit is live.
 Needs Go (the version in wowsims' `go.mod`), Python 3 with `pip install grpcio-tools==1.85.4`, and Node.
 
 ```sh
-scripts/build-sim.sh            # clones wowsims/forever into .wowsims and builds web/sim/
+scripts/build-sim.sh            # clones wowsims/forever into .wowsims and builds web/sim/ (SKIP_UPGRADES=1 skips the slow gear ranking)
 python3 -m http.server -d web   # then open http://localhost:8000
 node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis in the terminal
 ```
@@ -49,7 +67,9 @@ node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis i
 | `web/js/logparser.js` | Combat log parser |
 | `web/js/analyze.js` | Fight metrics, the wowsims request, sim comparison and suggestions |
 | `web/js/sim-worker.js` | Loads the WASM sim in a Web Worker |
+| `web/js/upgrades.js` | Picks upgrade candidates per slot and reads the sim results |
 | `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |
+| `scripts/precompute-upgrades.mjs` | Ranks gear per rotation for the upgrades section (`web/sim/upgrades.json`) |
 
 Sim by [WoWSims](https://github.com/wowsims/forever) (MIT).
 

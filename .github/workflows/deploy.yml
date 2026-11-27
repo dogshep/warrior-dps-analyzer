@@ -76,9 +76,23 @@ jobs:
       - name: Build the sim
         env:
           GOTOOLCHAIN: local
+          SKIP_UPGRADES: '1'
         run: WOWSIMS_DIR=.wowsims SKIP_FETCH=1 scripts/build-sim.sh
+      # The ranked item list behind "Gear upgrades" takes about 14 minutes, so it is cached. It only changes with
+      # the wowsims commit or the code that ranks items.
+      - name: Key for the upgrade list
+        id: upkey
+        run: echo "key=upgrades-$(git -C .wowsims rev-parse HEAD)-${{ hashFiles('scripts/precompute-upgrades.mjs', 'web/js/upgrades.js', 'web/js/analyze.js') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        id: upcache
+        with:
+          path: web/sim/upgrades.json
+          key: ${{ steps.upkey.outputs.key }}
+      - name: Rank gear for the upgrade list
+        if: steps.upcache.outputs.cache-hit != 'true'
+        run: node scripts/precompute-upgrades.mjs .wowsims/assets/database/db.json web/sim
       - name: Smoke test (parse the sample log and sim it)
-        run: node tests/cooldowns_test.mjs && node tests/worker_test.mjs && node tests/wcl_proxy_test.mjs && node tests/wcl_auth_test.mjs && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
+        run: node tests/cooldowns_test.mjs && node tests/upgrades_test.mjs && node tests/worker_test.mjs && node tests/wcl_proxy_test.mjs && node tests/wcl_auth_test.mjs && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sim
