@@ -7,3 +7,10 @@ workers_dev = true
 
 [vars]
 ALLOWED_ORIGINS = "https://dogshep.github.io"
+
+# Per-IP limit on requests that miss the cache (the ones that spend the site's Warcraft Logs quota).
+# A long fight takes about 15 requests, so 60 a minute leaves room for normal use.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }

@@ -11,9 +11,14 @@ const iterations = Number(itArg || 100);
 const saved = JSON.parse(readFileSync(path, 'utf8'));
 const mem = new Map([['wcl_token', 'saved']]);
 globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
+// Saved files hold either whole API answers ({data: {reportData: {report}}}) or just the report part.
+const inner = x => x?.data?.reportData?.report ?? x?.report ?? x;
+const wrap = report => ({ data: { reportData: { report } } });
 const fetchImpl = async (url, opts) => {
   const q = JSON.parse(opts.body).query;
-  return { ok: true, status: 200, json: async () => (q.includes('masterData') ? saved.report : saved.events) };
+  const field = /(\w+): events/.exec(q)?.[1];
+  const ev = inner(saved.events);
+  return { ok: true, status: 200, json: async () => wrap(field ? { [field]: ev[field] } : inner(saved.report)) };
 };
 const root = new URL('../web/sim/', import.meta.url);
 const names = JSON.parse(readFileSync(new URL('names.json', root)));

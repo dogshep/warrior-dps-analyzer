@@ -2,8 +2,14 @@
 
 A small Cloudflare Worker that loads public Warcraft Logs reports for the page using this site's own
 Warcraft Logs client (client credentials). The secret lives only in the Worker. Callers can run only the
-page's two queries (`web/js/wcl-queries.js`), only from https://dogshep.github.io (and localhost), and
-identical requests are cached for 10 minutes. Private reports still need the viewer's own sign-in.
+page's queries (`web/js/wcl-queries.js`), with strictly checked variables, from https://dogshep.github.io
+(and localhost) in a browser. Answers are cached for 10 minutes and failures for 1 minute, and each IP can make
+60 requests a minute that miss the cache (a Cloudflare rate-limit binding in `wrangler.toml`). Private reports
+still need the viewer's own sign-in.
+
+The Origin check only keeps other websites from using the Worker in a browser; a script can send any Origin.
+The variable checks, the cache and the rate limit are what protect the site's Warcraft Logs quota.
+A response header `X-Cache: hit` shows an answer came from the cache.
 
 ## One-time setup
 
