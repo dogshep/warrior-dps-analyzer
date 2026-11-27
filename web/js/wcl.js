@@ -256,7 +256,7 @@ async function fetchFight(report, warrior, fight, fetchImpl) {
   if (first) {
     combatants.set(guid, {
       time: first.timestamp, guid, faction: first.faction,
-      items: (first.gear || []).map(g => ({ id: g.id || 0, ilvl: g.itemLevel || 0, enchant: g.permanentEnchant || 0, tempEnchant: g.temporaryEnchant || 0 })),
+      items: (first.gear || []).map(g => ({ id: Number(g.id) || 0, ilvl: Number(g.itemLevel) || 0, enchant: Number(g.permanentEnchant) || 0, tempEnchant: Number(g.temporaryEnchant) || 0 })),
       auras: (first.auras || []).map(a => a.ability),
     });
   }
