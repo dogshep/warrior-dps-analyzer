@@ -10,6 +10,7 @@ const [path, itArg] = process.argv.slice(2);
 const iterations = Number(itArg || 100);
 const saved = JSON.parse(readFileSync(path, 'utf8'));
 const mem = new Map([['wcl_token', 'saved']]);
+globalThis.sessionStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
 globalThis.localStorage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) };
 // Saved files hold either whole API answers ({data: {reportData: {report}}}) or just the report part.
 const inner = x => x?.data?.reportData?.report ?? x?.report ?? x;

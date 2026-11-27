@@ -3,7 +3,8 @@
 //
 // Public reports load with no sign-in through this site's Worker (see proxy() below). Otherwise, sign-in uses OAuth
 // with PKCE, the flow for pages with no server: the page holds only a public client id, and each viewer signs in
-// with their own Warcraft Logs account. The token stays in this browser's localStorage.
+// with their own Warcraft Logs account. The token stays in this tab's sessionStorage, not localStorage: every
+// project site under dogshep.github.io shares one origin, and localStorage would hand it to all of them for a week.
 
 export const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
 
@@ -16,11 +17,16 @@ const TOKEN = `${SITE}/oauth/token`;
 // The Forever address is tried second.
 const APIS = ['https://classic.warcraftlogs.com/api/v2/user', `${SITE}/api/v2/user`];
 
-const store = {
-  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
-  del: k => { try { localStorage.removeItem(k); } catch {} },
-};
+const storage = kind => ({
+  get: k => { try { return globalThis[kind].getItem(k); } catch { return null; } },
+  set: (k, v) => { try { globalThis[kind].setItem(k, v); } catch {} },
+  del: k => { try { globalThis[kind].removeItem(k); } catch {} },
+});
+// Settings that are not secret (a custom client id) persist; sign-in state lasts only for this tab.
+const store = storage('localStorage');
+const session = storage('sessionStorage');
+// Earlier versions kept the token and sign-in state in localStorage. Clear those out.
+for (const k of ['wcl_token', 'wcl_token_expires', 'wcl_verifier', 'wcl_state', 'wcl_pending']) store.del(k);
 
 // v2 API client ids are UUIDs. Anything else (a v1 key, say) is ignored so it can't shadow the site's client.
 const isClientId = id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
@@ -59,14 +65,14 @@ async function challenge(verifier) {
 }
 
 export function token() {
-  const exp = Number(store.get('wcl_token_expires') || 0);
-  if (exp && Date.now() > exp) { store.del('wcl_token'); return null; }
-  return store.get('wcl_token');
+  const exp = Number(session.get('wcl_token_expires') || 0);
+  if (exp && Date.now() > exp) { signOut(); return null; }
+  return session.get('wcl_token');
 }
 
 export function signOut() {
-  store.del('wcl_token');
-  store.del('wcl_token_expires');
+  session.del('wcl_token');
+  session.del('wcl_token_expires');
 }
 
 // Sends the viewer to Warcraft Logs to sign in. `pending` (the pasted link) comes back after the redirect.
@@ -75,9 +81,9 @@ export async function signIn(pending) {
   if (!id) throw new Error('This page has no Warcraft Logs client id yet.');
   const verifier = crypto.randomUUID() + crypto.randomUUID();
   const state = crypto.randomUUID();
-  store.set('wcl_verifier', verifier);
-  store.set('wcl_state', state);
-  if (pending) store.set('wcl_pending', pending);
+  session.set('wcl_verifier', verifier);
+  session.set('wcl_state', state);
+  if (pending) session.set('wcl_pending', pending); else session.del('wcl_pending');
   const params = new URLSearchParams({
     client_id: id, response_type: 'code', redirect_uri: redirectUri(), state,
     code_challenge: await challenge(verifier), code_challenge_method: 'S256',
@@ -85,27 +91,27 @@ export async function signIn(pending) {
   location.href = `${AUTHORIZE}?${params}`;
 }
 
-// Finishes sign-in when Warcraft Logs redirects back with ?code=. Returns the pending link, if any.
+// Finishes sign-in when Warcraft Logs redirects back with ?code= (or ?error=). Returns the pending link, if any.
 export async function finishSignIn() {
   const q = new URLSearchParams(location.search);
-  const code = q.get('code');
-  if (!code) return null;
+  const code = q.get('code'), error = q.get('error');
+  if (!code && !error) return null;
   history.replaceState(null, '', redirectUri());
-  if (q.get('state') !== store.get('wcl_state')) throw new Error('Warcraft Logs sign-in did not match this page. Try again.');
+  // Read and clear the sign-in state first, so it can be used only once.
+  const state = session.get('wcl_state'), verifier = session.get('wcl_verifier'), pending = session.get('wcl_pending');
+  for (const k of ['wcl_state', 'wcl_verifier', 'wcl_pending']) session.del(k);
+  // The state must match one this tab started; a link someone else made has none (or the wrong one).
+  if (!state || !verifier || q.get('state') !== state) throw new Error('Warcraft Logs sign-in did not match this page. Try again.');
+  if (error) throw new Error(error === 'access_denied' ? 'Warcraft Logs sign-in was cancelled.' : 'Warcraft Logs sign-in failed. Try again.');
   const body = new URLSearchParams({
-    grant_type: 'authorization_code', client_id: clientId(), code, redirect_uri: redirectUri(),
-    code_verifier: store.get('wcl_verifier') || '',
+    grant_type: 'authorization_code', client_id: clientId(), code, redirect_uri: redirectUri(), code_verifier: verifier,
   });
-  store.del('wcl_verifier');
-  store.del('wcl_state');
   const res = await fetch(TOKEN, { method: 'POST', body });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.access_token) throw new Error(`Warcraft Logs sign-in failed (${res.status}).`);
-  store.set('wcl_token', data.access_token);
+  session.set('wcl_token', data.access_token);
   // Expire a day early to be safe.
-  store.set('wcl_token_expires', String(Date.now() + Math.max(3600, (data.expires_in || 86400 * 7) - 86400) * 1000));
-  const pending = store.get('wcl_pending');
-  store.del('wcl_pending');
+  session.set('wcl_token_expires', String(Date.now() + Math.max(3600, (data.expires_in || 86400 * 7) - 86400) * 1000));
   return pending;
 }
 

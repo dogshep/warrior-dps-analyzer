@@ -3,6 +3,7 @@
 
 const SPELL_PREFIX = ['SPELL_', 'RANGE_'];
 const ADV_FIELDS = 17;
+const ADV_EVENT = /_(DAMAGE|CAST_SUCCESS|HEAL|ENERGIZE|DRAIN|LEECH)$/;
 
 // Splits one line's CSV payload into tokens, keeping quoted strings and (...)/[...] groups intact.
 export function splitTop(s) {
@@ -34,6 +35,15 @@ export function parseGroup(s) {
 }
 
 const unq = s => (s && s[0] === '"' ? s.slice(1, -1) : s);
+const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// Payload field n (0 = event name) without splitting the whole line. Fields 1..6 hold no commas.
+function field(payload, n) {
+  let i = 0;
+  for (let k = 0; k < n; k++) { i = payload.indexOf(',', i) + 1; if (!i) return ''; }
+  const j = payload.indexOf(',', i);
+  return j < 0 ? payload.slice(i) : payload.slice(i, j);
+}
 
 // "11/26 20:14:55.123" or "11/26/2026 20:14:55.1234-5" -> ms since an arbitrary epoch (same day math is all we need).
 function parseTime(ts) {
@@ -115,6 +125,9 @@ export class LogParser {
       return;
     }
     if (!/^(SWING_|SPELL_|RANGE_|UNIT_DIED)/.test(ev)) return;
+    // Skip lines that can't matter before the full split: nothing here uses an event between two non-players
+    // unless it carries unit health (damage and the like, for execute timing) or is a death.
+    if (ev !== 'UNIT_DIED' && !ADV_EVENT.test(ev) && !field(payload, 1).startsWith('Player-') && !field(payload, 5).startsWith('Player-')) return;
     this.onCombatEvent(t, ev, splitTop(payload));
   }
 
@@ -139,8 +152,9 @@ export class LogParser {
     this.combatants.set(guid, {
       time: t, guid, faction: Number(tok[2]),
       stats: { str: stats[1], agi: stats[2], sta: stats[3], int: stats[4], spi: stats[5] },
-      items: (items || []).map(e => ({ id: e[0], ilvl: e[1], enchant: Array.isArray(e[2]) ? (e[2][0] || 0) : 0, tempEnchant: Array.isArray(e[2]) ? (e[2][1] || 0) : 0 })),
-      auras, talentsRaw: talents,
+      // Ids are forced to numbers: a crafted log can put any text in these fields.
+      items: (items || []).map(e => ({ id: num(e[0]), ilvl: num(e[1]), enchant: Array.isArray(e[2]) ? num(e[2][0]) : 0, tempEnchant: Array.isArray(e[2]) ? num(e[2][1]) : 0 })),
+      auras: auras.map(num), talentsRaw: talents,
     });
     this.player(guid);
   }
@@ -163,7 +177,7 @@ export class LogParser {
     const spellName = isSpell ? unq(tok[10]) : 'Melee';
 
     // Advanced params follow the prefix for cast success and damage events.
-    const hasAdv = this.advanced !== false && /_(DAMAGE|CAST_SUCCESS|HEAL|ENERGIZE|DRAIN|LEECH)$/.test(ev) && tok.length >= prefixEnd + ADV_FIELDS;
+    const hasAdv = this.advanced !== false && ADV_EVENT.test(ev) && tok.length >= prefixEnd + ADV_FIELDS;
     if (hasAdv) {
       const a = tok.slice(prefixEnd, prefixEnd + ADV_FIELDS);
       // a: infoGUID, ownerGUID, curHP, maxHP, AP, SP, armor, absorb, powerType, curPower, maxPower, powerCost, x, y, mapID, facing, level
@@ -225,26 +239,36 @@ export class LogParser {
   }
 
   // Splits the log into fights: encounters first, then trash pulls (player damage with gaps over 15s).
+  // One pass over the player's damage (it is in time order); the result is kept per player.
   fights(guid) {
     const p = this.players.get(guid);
     if (!p) return [];
+    this.fightCache ??= new Map();
+    if (this.fightCache.has(guid)) return this.fightCache.get(guid).map(f => ({ ...f }));
     const out = this.encounters.filter(e => !Number.isNaN(e.end)).map(e => ({ kind: 'boss', name: e.name, start: e.start, end: e.end, success: e.success }));
-    const inEnc = t => out.some(f => t >= f.start && t <= f.end);
-    const dmg = p.damage.filter(d => !inEnc(d.t));
-    let cur = null;
+    const encs = [...out].sort((a, b) => a.start - b.start);
+    let ei = 0, cur = null;
     const trash = [];
-    for (const d of dmg) {
-      if (!cur || d.t - cur.end > 15000) { cur = { kind: 'trash', start: d.t, end: d.t, dmg: 0 }; trash.push(cur); }
+    for (const d of p.damage) {
+      // Encounters that ended before this hit can't contain later hits either.
+      while (ei < encs.length && encs[ei].end < d.t) ei++;
+      let inEnc = false;
+      for (let k = ei; k < encs.length && encs[k].start <= d.t; k++) if (d.t <= encs[k].end) { inEnc = true; break; }
+      if (inEnc) continue;
+      if (!cur || d.t - cur.end > 15000) { cur = { kind: 'trash', start: d.t, end: d.t, dmg: 0, names: new Set() }; trash.push(cur); }
       cur.end = d.t; cur.dmg += d.amount;
+      cur.names.add(this.names.get(d.dst) || '?');
     }
     for (const f of trash) {
       if (f.end - f.start < 10000) continue;
-      const names = new Map();
-      for (const d of dmg) if (d.t >= f.start && d.t <= f.end) names.set(this.names.get(d.dst) || '?', 1);
-      f.name = [...names.keys()].slice(0, 3).join(', ') + (names.size > 3 ? ` +${names.size - 3}` : '');
+      const names = [...f.names];
+      delete f.names;
+      f.name = names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3}` : '');
       out.push(f);
     }
-    return out.sort((a, b) => a.start - b.start);
+    out.sort((a, b) => a.start - b.start);
+    this.fightCache.set(guid, out);
+    return out.map(f => ({ ...f }));
   }
 
   warriors() {
@@ -275,21 +299,31 @@ export function parseText(text) {
   return p;
 }
 
+// Lines longer than this are not combat log lines (the longest real ones, COMBATANT_INFO, are a few KB).
+const MAX_LINE = 64 * 1024;
+
 // Streams a browser File line by line so a large log never sits in memory as one string.
 export async function parseFile(file, onProgress) {
   const p = new LogParser();
   const reader = file.stream().pipeThrough(new TextDecoderStream()).getReader();
-  let rest = '', read = 0;
+  let rest = '', read = 0, skipping = false;
+  const feed = l => p.feedLine(l.endsWith('\r') ? l.slice(0, -1) : l);
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     read += value.length;
-    const chunk = rest + value;
-    const lines = chunk.split('\n');
-    rest = lines.pop();
-    for (const l of lines) p.feedLine(l.endsWith('\r') ? l.slice(0, -1) : l);
+    // Only the new text is searched for line breaks, so a file with no line breaks stays linear.
+    let start = 0, nl;
+    while ((nl = value.indexOf('\n', start)) >= 0) {
+      if (!skipping) feed(rest + value.slice(start, nl));
+      rest = ''; skipping = false; start = nl + 1;
+    }
+    if (!skipping) {
+      rest += value.slice(start);
+      if (rest.length > MAX_LINE) { rest = ''; skipping = true; }
+    }
     onProgress && onProgress(Math.min(1, read / file.size));
   }
-  if (rest) p.feedLine(rest);
+  if (rest && !skipping) feed(rest);
   return p;
 }

@@ -1,7 +1,7 @@
 import { parseFile } from './logparser.js';
 import * as wcl from './wcl.js';
 import { mmss } from './cooldowns.js';
-import { analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
+import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -14,12 +14,23 @@ const data = (async () => {
     ...PRESETS.map(p => fetch(`sim/apls/${p}.apl.json`).then(r => r.json())),
   ]);
   if (version) $('simver').textContent = `@ ${version.commit.slice(0, 7)} (${version.commitDate.slice(0, 10)})`;
-  return { names, apls: Object.fromEntries(PRESETS.map((p, i) => [p, apls[i]])) };
+  return { names: safeNames(names), apls: Object.fromEntries(PRESETS.map((p, i) => [p, apls[i]])) };
 })();
 
 // One worker, created on first use, so the 6 MB sim only downloads when someone analyzes a fight.
 let worker, nextId = 0;
 const pending = new Map();
+const MAX_ITERATIONS = 5000;
+
+// Stops a running sim: the worker is thrown away (a new one starts on the next run).
+function cancelSim() {
+  if (!worker) return;
+  worker.terminate();
+  worker = null;
+  for (const p of pending.values()) { const e = new Error('Sim cancelled.'); e.cancelled = true; p.reject(e); }
+  pending.clear();
+}
+
 function sim(request, onProgress) {
   if (!worker) {
     worker = new Worker('js/sim-worker.js');
@@ -43,6 +54,7 @@ function showProgress(label, done) {
 let parser = null, report = null;
 
 async function load(file) {
+  cancelSim();
   report = null;
   $('progress').hidden = false;
   const bar = $('progress').firstElementChild;
@@ -79,7 +91,8 @@ async function analyze() {
   }
   const a = analyzeFight(parser, guid, fight, names);
   if ($('preset').value) a.preset = $('preset').value;
-  const iterations = Math.max(50, Number($('iters').value) || 300);
+  const iterations = Math.min(MAX_ITERATIONS, Math.max(50, Math.round(Number($('iters').value)) || 300));
+  $('iters').value = String(iterations);
   const opts = { iterations, race: $('race').value || undefined, talents: $('talents').value.trim() || undefined };
 
   $('out').hidden = false;
@@ -88,6 +101,7 @@ async function analyze() {
   renderCooldowns(a);
   showProgress('Starting the sim…', 0);
   $('go').disabled = true;
+  $('cancel').hidden = false;
   try {
     const cons = detectConsumes(a, parser, names);
     // Two runs, one after the other: your setup, then the same with full consumables. The bar covers both.
@@ -104,9 +118,12 @@ async function analyze() {
     $('simnote').textContent = `${a.isRun ? `Dungeon run: your DPS counts only time in combat, and the sim fights a typical ${Math.round(a.simDur)}s pull, scaled to your ${a.pulls} pulls. ` : ''}Sim: ${a.preset.replace('_', ' ')} rotation, ${iterations} iterations of a ${Math.round(a.simDur || a.dur)}s fight against ${a.targetCount} target${a.targetCount > 1 ? 's' : ''}, with the buffs and consumables seen in your log. Consumables seen: ${cons.found.map(f => f.name).join(', ') || 'none'}.`;
   } catch (e) {
     renderTips(suggestions(a, null, null));
-    $('simnote').innerHTML = `<span class="warn">The sim failed: ${esc(e.message)}</span>. These tips come from the log alone.`;
+    $('simnote').innerHTML = e.cancelled
+      ? 'Sim cancelled. These tips come from the log alone.'
+      : `<span class="warn">The sim failed: ${esc(e.message)}</span>. These tips come from the log alone.`;
   } finally {
     $('go').disabled = false;
+    $('cancel').hidden = true;
   }
 }
 
@@ -179,7 +196,8 @@ function renderTables(a, names) {
         const it = gear[li];
         if (!it || !it.id) return '';
         const n = names.items[it.id];
-        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/classic/item=${it.id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${it.id} <span class="warn">(not in sim)</span>`}</td><td>${enchCell(it, si)}</td></tr>`;
+        const id = Number(it.id) || 0;
+        return `<tr><td>${SLOT_NAMES[si]}</td><td>${n ? `<a href="https://www.wowhead.com/classic/item=${id}" target="_blank" rel="noopener">${esc(n[0])}</a>` : `#${id} <span class="warn">(not in sim)</span>`}</td><td>${enchCell(it, si)}</td></tr>`;
       }).join('')
     : '<tr><td class="warn">No gear in this log. Turn on Advanced Combat Logging.</td></tr>';
 }
@@ -231,3 +249,4 @@ $('wclClient').onchange = () => {
 $('wclOut').onclick = () => { wcl.signOut(); $('wclStatus').textContent = 'Signed out of Warcraft Logs.'; };
 wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
 $('go').onclick = analyze;
+$('cancel').onclick = cancelSim;
