@@ -9,7 +9,7 @@
 local ADDON, WT = ...
 _G.WarriorTips = WT
 
-WT.version = "0.3.0"
+WT.version = "0.4.0"
 
 local DEFAULTS = {
   enabled = true,
@@ -237,19 +237,23 @@ local function parseColor(v)
 end
 
 -- Open the game's color picker for a setting ("color" or "rageColor").
-local function pickColor(key)
+-- done() runs after every change or cancel (the options window repaints its swatch).
+local function pickColor(key, done)
   local c = WT.db[key]
   local function apply()
     local r, g, b = ColorPickerFrame:GetColorRGB()
     WT.db[key] = { r, g, b }; WT.ApplyStyle(); WT.ShowSample(key)
+    if done then done() end
   end
   local info = { r = c[1], g = c[2], b = c[3], hasOpacity = false, swatchFunc = apply,
-    cancelFunc = function() WT.db[key] = c; WT.ApplyStyle() end }
+    cancelFunc = function() WT.db[key] = c; WT.ApplyStyle(); if done then done() end end }
   if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
     ColorPickerFrame:SetupColorPickerAndShow(info)
     return true
   end
 end
+WT.PickColor = pickColor
+WT.COLORS = COLORS
 
 local bg = frame:CreateTexture(nil, "BACKGROUND")
 bg:SetAllPoints()
@@ -315,12 +319,14 @@ local function setUnlocked(on)
       local a, _, b, x, y = self:GetPoint()
       WT.db.point = { a, b, x, y }
     end)
-    text:SetText("Warrior Tips: drag me, then /wtips lock")
+    text:SetText("Warrior Tips: drag me, then Lock")
     frame:SetAlpha(1); bg:Show(); frame:Show()
   else
     bg:Hide(); frame:Hide()
   end
 end
+WT.SetUnlocked = setUnlocked
+function WT.IsUnlocked() return frame.unlocked == true end
 
 ---------------------------------------------------------------------------
 -- Events: modules register handlers with WT.On(event, fn).
@@ -375,7 +381,7 @@ local function status()
 end
 
 local function help()
-  WT.Print("commands:")
+  WT.Print("/wtips opens the options window. Commands:")
   WT.Print("  /wtips on | off  - turn all live tips on or off")
   WT.Print("  /wtips tip <name> on|off  - " .. table.concat(TIP_NAMES, ", "))
   WT.Print("  /wtips report boss|all|off  - when to print the report card after a fight")
@@ -387,7 +393,7 @@ local function help()
   WT.Print("  /wtips sound on|off, /wtips unlock | lock, /wtips test")
   WT.Print("  /wtips probe  - check what Forever lets addons read in your next fight")
   WT.Print("  /wtips debug on|off  - full report card after every fight, for testing")
-  WT.Print("  /wtips status")
+  WT.Print("  /wtips status, /wtips help")
 end
 
 SLASH_WARRIORTIPS1 = "/wtips"
@@ -395,6 +401,10 @@ SLASH_WARRIORTIPS2 = "/warriortips"
 SlashCmdList.WARRIORTIPS = function(input)
   local cmd, a, b = strsplit(" ", strlower(strtrim(input or "")))
   local db = WT.db
+  if cmd == "" or cmd == nil or cmd == "options" or cmd == "config" then
+    if WT.ToggleOptions then WT.ToggleOptions() else help() end
+    return
+  end
   if cmd == "on" or cmd == "off" then
     db.enabled = cmd == "on"; status()
   elseif cmd == "tip" and db.tips[a or ""] ~= nil and (b == "on" or b == "off") then
@@ -424,4 +434,5 @@ SlashCmdList.WARRIORTIPS = function(input)
     WT.Print("debug mode " .. (WT.debug and "on: full report card after every fight, plus errors" or "off"))
   elseif cmd == "status" then status()
   else help() end
+  if WT.RefreshOptions then WT.RefreshOptions() end
 end

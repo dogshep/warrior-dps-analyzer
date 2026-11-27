@@ -93,14 +93,19 @@ CreateFrame = function()
     -- Secret colors may be passed to SetTextColor; count them (the rage indicator).
     fs.SetTextColor = function(_, r) if r == SECRET then indicatorShown = indicatorShown + 1 end end
     return fs end
-  f.Show = function(self) if rawget(self, "_text") then shown[#shown + 1] = { t = now, text = self._text } end end
+  f.Show = function(self) rawset(self, "_shown", true); if rawget(self, "_text") then shown[#shown + 1] = { t = now, text = self._text } end end
+  f.Hide = function(self) rawset(self, "_shown", false) end
+  f.IsShown = function(self) return rawget(self, "_shown") == true end
+  f.SetChecked = function(self, v) rawset(self, "_checked", v) end
+  f.GetChecked = function(self) return rawget(self, "_checked") end
+  f.Click = function(self) local h = rawget(self, "OnClick"); if h then rawset(self, "_checked", not rawget(self, "_checked")); h(self) end end
   frames[#frames + 1] = f
   return f
 end
 UIParent = newObj()
 
 local ns = {}
-for _, file in ipairs({ "Core.lua", "Probe.lua", "Tips.lua", "Report.lua" }) do
+for _, file in ipairs({ "Core.lua", "Probe.lua", "Tips.lua", "Report.lua", "Options.lua" }) do
   assert(loadfile("addon/WarriorTips/" .. file))("WarriorTips", ns)
 end
 local function fire(e, ...) for _, f in ipairs(frames) do local ev, h = rawget(f, "events"), rawget(f, "OnEvent"); if ev and ev[e] and h then h(f, e, ...) end end end
@@ -186,3 +191,21 @@ print("== debug report on an 8s trash fight")
 local sawDebug = false
 for i = before + 1, #printed do print("  " .. printed[i]); if printed[i]:find("%[debug%] casts:") then sawDebug = true end end
 assert(sawDebug, "debug report missing")
+
+-- Options window: opens from /wtips, every control works, slash changes repaint it.
+SlashCmdList.WARRIORTIPS("")
+local checks, clicked = 0, 0
+for _, f in ipairs(frames) do
+  if rawget(f, "OnClick") and rawget(f, "_checked") ~= nil then checks = checks + 1 end
+end
+assert(checks >= 10, "options checkboxes: " .. checks)
+-- Click every checkbox and button once (twice for checkboxes, to restore them).
+local before = { enabled = ns.db.enabled, report = ns.db.report }
+for _, f in ipairs(frames) do
+  local h = rawget(f, "OnClick")
+  if h and rawget(f, "_checked") ~= nil then f:Click(); f:Click(); clicked = clicked + 1 end
+end
+assert(ns.db.enabled == before.enabled, "checkbox round trip")
+SlashCmdList.WARRIORTIPS("report all")
+print(("== options window ok (%d checkboxes clicked, report=%s)"):format(clicked, ns.db.report))
+SlashCmdList.WARRIORTIPS("")
