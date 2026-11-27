@@ -1,47 +1,48 @@
 -- Warrior Tips: live tips during combat.
 --
--- Everything here works only from data Forever lets addons read. Where a value
--- is secret in combat we fall back to a snapshot taken just before the combat
--- restriction turns on (ADDON_RESTRICTION_STATE_CHANGED fires before it is
--- enforced), or the tip simply stays quiet.
+-- What Forever lets addons read in combat (from /wtips probe, 2026-11-27):
+--   readable: spell usability (Execute, Overpower...), target classification,
+--             the spell id of our own casts (UNIT_SPELLCAST_SUCCEEDED)
+--   secret:   rage, health, cooldowns, auras (Battle Shout comes back nil)
+-- So cooldowns and Battle Shout are tracked from a clean read just before
+-- combat restrictions switch on plus our own casts, and rage capping is shown
+-- by a display-only indicator driven by a color curve (the game fills in the
+-- color from the secret value; our code never sees the number).
 
 local _, WT = ...
 
--- Reactive abilities checked each tick (a constant, so the tick makes no new table).
 local REACTIVE = { "Overpower", "Revenge" }
-
 local TICK = 0.25
-local BIG_COOLDOWNS = { "Death Wish", "Recklessness", "Blood Fury" }
+local BIG_COOLDOWNS = { "Death Wish", "Recklessness", "Blood Fury", "Bloodrage" }
+local SHOUT_DEFAULT = 120
 
 local ticker
-local snap = { at = 0, ready = {} }   -- last pre-combat snapshot
+local shout = { expires = nil, duration = nil }   -- Battle Shout tracker
 
-local function takeSnapshot()
-  snap.at = GetTime()
-  for _, name in ipairs(BIG_COOLDOWNS) do
-    snap.ready[name] = WT.Knows(name) and WT.CooldownLeft(name) == 0 or nil
-  end
+-- Clean look at cooldowns and Battle Shout. Runs whenever values are readable:
+-- just before restrictions turn on, out of combat, and after combat.
+local function sync()
+  for _, name in ipairs(BIG_COOLDOWNS) do WT.SyncCooldown(name) end
+  for name in pairs(WT.CD_BASE) do WT.SyncCooldown(name) end
   local left = WT.ShoutLeft()
-  snap.shoutExpires = left and (GetTime() + left) or nil
-  snap.shoutDuration = nil
-  local id = WT.spells["Battle Shout"]
-  if id and left and left > 0 then
-    snap.shoutDuration = WT.ReadField("duration", C_UnitAuras.GetPlayerAuraBySpellID, id)
+  if left ~= nil then
+    shout.expires = GetTime() + left
+    local id = WT.spells["Battle Shout"]
+    if id and left > 0 then
+      local dur = WT.ReadField("duration", C_UnitAuras.GetPlayerAuraBySpellID, id)
+      if dur and dur > 0 then shout.duration = dur end
+    end
   end
 end
+WT.Sync = sync
 
--- Is this cooldown ready? Live read if possible, else the snapshot for the first 15s of the fight.
 local function isReady(name)
-  if not WT.Knows(name) then return false end
-  local left = WT.CooldownLeft(name)
-  if left ~= nil then return left == 0 end
-  local f = WT.fight
-  return f and snap.ready[name] and GetTime() - f.start < 15 or false
+  return WT.Knows(name) and WT.CooldownLeftTracked(name) == 0
 end
 
 local function readyList(names)
   local out = {}
-  for _, n in ipairs(names) do if isReady(n) then table.insert(out, n) end end
+  for _, n in ipairs(names) do if isReady(n) then out[#out + 1] = n end end
   return out
 end
 
@@ -55,35 +56,88 @@ end
 local function bossPull(f)
   if f.bossAnnounced then return end
   f.bossAnnounced, f.boss = true, true
-  local ready = readyList({ "Death Wish", "Blood Fury" })
   f.readyAtPull = {}
   for _, n in ipairs(BIG_COOLDOWNS) do f.readyAtPull[n] = isReady(n) end
+  local ready = readyList({ "Death Wish", "Blood Fury" })
   if #ready > 0 then
     WT.Tip("cooldowns", "Boss pull: " .. table.concat(ready, " + ") .. " ready", 60)
   end
 end
 
-local function shoutLeft(f)
+local function shoutLeft()
   local live = WT.ShoutLeft()
-  if live ~= nil then f.shoutLive = true; return live end
-  -- Snapshot-based estimate, only trusted while we can see our own casts.
-  if f.castsVisible and f.shoutExpires then return math.max(0, f.shoutExpires - GetTime()) end
+  if live ~= nil then
+    shout.expires = GetTime() + live
+    return live
+  end
+  if shout.expires then return math.max(0, shout.expires - GetTime()) end
   return nil
 end
+
+---------------------------------------------------------------------------
+-- Rage indicator: a second line under the tips. When rage is secret its color
+-- comes from UnitPowerPercent with a step color curve that is transparent
+-- below the cap and gold at or above it.
+---------------------------------------------------------------------------
+local rageLabel, rageCurve, rageCurveCap
+
+local function rageIndicator()
+  if rageLabel then return rageLabel end
+  -- Its own frame: the tip frame hides between tips, this line must not.
+  local holder = CreateFrame("Frame", "WarriorTipsRageFrame", UIParent)
+  holder:SetSize(300, 20)
+  holder:SetPoint("TOP", _G.WarriorTipsFrame, "BOTTOM", 0, -2)
+  rageLabel = holder:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  rageLabel:SetPoint("CENTER")
+  rageLabel:SetText("Rage capped: Heroic Strike")
+  rageLabel:SetTextColor(1, 0.82, 0.3, 0)
+  return rageLabel
+end
+
+local function curveForCap(cap)
+  if rageCurve and rageCurveCap == cap then return rageCurve end
+  if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor) then return nil end
+  local ok, curve = pcall(C_CurveUtil.CreateColorCurve)
+  if not ok or not curve then return nil end
+  pcall(curve.SetType, curve, Enum.LuaCurveType.Step)
+  curve:AddPoint(0, CreateColor(1, 0.82, 0.3, 0))
+  curve:AddPoint(cap / 100, CreateColor(1, 0.82, 0.3, 1))
+  rageCurve, rageCurveCap = curve, cap
+  return curve
+end
+
+local function hideRage()
+  if rageLabel then rageLabel:SetTextColor(1, 0.82, 0.3, 0) end
+end
+
+-- Returns true if the display-only indicator is in use (rage is secret).
+local function updateRageIndicator()
+  local db = WT.db
+  if not db.enabled or not db.tips.rage then hideRage(); return false end
+  local label = rageIndicator()
+  local curve = curveForCap(db.rageCap)
+  if not label or not curve then return false end
+  local ok, color = pcall(UnitPowerPercent, "player", Enum.PowerType.Rage, false, curve)
+  if not ok or color == nil then hideRage(); return false end
+  local okRGBA = pcall(function() label:SetTextColor(color:GetRGBA()) end)
+  if not okRGBA then hideRage(); return false end
+  return true
+end
+
+---------------------------------------------------------------------------
 
 local function tick()
   local f = WT.fight
   if not f then return end
   local now = GetTime()
 
-  -- Boss detection by target, for bosses that don't fire ENCOUNTER_START.
   if not f.bossAnnounced and WT.TargetIsBoss() then bossPull(f) end
 
   -- Execute phase: Execute turns usable when the target drops under 20%.
   local exec = WT.UsableIgnoringRage("Execute")
   if exec ~= nil then
     if exec and f.prevExec == false and targetWorthIt() then
-      f.executeSeen = true
+      if not f.execStart then f.execStart = now end
       local msg = "Execute phase: Execute is your main button now"
       if f.boss then
         local ready = readyList({ "Recklessness", "Death Wish" })
@@ -94,9 +148,21 @@ local function tick()
     f.prevExec = exec
   end
 
-  -- Rage capping: only when rage is readable in combat.
+  -- Big cooldown back mid boss fight.
+  if f.boss then
+    for _, n in ipairs({ "Death Wish", "Blood Fury" }) do
+      local ready = isReady(n)
+      if ready and f.wasReady[n] == false and now - f.start > 10 then
+        WT.Tip("cooldowns", n .. " is ready again", 30, "back" .. n)
+      end
+      f.wasReady[n] = ready
+    end
+  end
+
+  -- Rage capping: a real tip when rage is readable, else the indicator.
   local rage = WT.Rage()
   if rage ~= nil then
+    hideRage()
     f.rageSamples = f.rageSamples + 1
     if rage >= WT.db.rageCap then
       f.rageCapped = f.rageCapped + 1
@@ -107,11 +173,13 @@ local function tick()
     else
       f.capSince = nil
     end
+  else
+    updateRageIndicator()
   end
 
   -- Battle Shout missing or about to drop.
-  local left = shoutLeft(f)
-  if left ~= nil and WT.Knows("Battle Shout") then
+  local left = WT.Knows("Battle Shout") and shoutLeft() or nil
+  if left ~= nil then
     if left == 0 then
       f.shoutMissing = f.shoutMissing + TICK
       if now - f.start > 2 then WT.Tip("shout", "Battle Shout is down: recast it", 45, "shoutDown") end
@@ -134,10 +202,10 @@ end
 
 local function startFight()
   if WT.fight then return end
-  if GetTime() - snap.at > 3 then takeSnapshot() end
+  sync()
   WT.fight = {
     start = GetTime(), tips = {}, prevExec = false, rageSamples = 0, rageCapped = 0, shoutMissing = 0,
-    shoutExpires = snap.shoutExpires, shoutDuration = snap.shoutDuration,
+    casts = {}, execCasts = 0, wasReady = {},
   }
   if ticker then ticker:Cancel() end
   ticker = C_Timer.NewTicker(TICK, function()
@@ -148,21 +216,24 @@ end
 
 local function endFight()
   if ticker then ticker:Cancel(); ticker = nil end
+  hideRage()
   local f = WT.fight
   WT.fight = nil
   if f then
     f.stop = GetTime()
+    C_Timer.After(0.5, sync)
     if WT.OnFightEnd then WT.OnFightEnd(f) end
   end
 end
 
 -- Fires just before combat/encounter restrictions are enforced: our last clean look.
-WT.On("ADDON_RESTRICTION_STATE_CHANGED", function(_, rtype, state)
-  if Enum.AddOnRestrictionState and state == Enum.AddOnRestrictionState.Activating then takeSnapshot() end
+WT.On("ADDON_RESTRICTION_STATE_CHANGED", function(_, _, state)
+  if Enum.AddOnRestrictionState and state == Enum.AddOnRestrictionState.Activating then sync() end
 end)
 
 WT.On("PLAYER_REGEN_DISABLED", startFight)
 WT.On("PLAYER_REGEN_ENABLED", endFight)
+WT.On("PLAYER_ENTERING_WORLD", function() C_Timer.After(2, sync) end)
 WT.On("ENCOUNTER_START", function()
   startFight()
   bossPull(WT.fight)
@@ -173,13 +244,35 @@ WT.On("PLAYER_TARGET_CHANGED", function()
   if WT.fight then WT.fight.prevExec = false end
 end)
 
--- Track our own Battle Shout casts when the spell id is readable.
+-- Our own casts: readable on Forever even in combat.
+local nameById = {}
 WT.On("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
+  if unit ~= "player" or WT.IsSecret(spellID) then return end
+  if nameById.stale ~= false then
+    wipe(nameById)
+    for n, id in pairs(WT.spells) do nameById[id] = n end
+    nameById.stale = false
+  end
+  local name = nameById[spellID]
+  if name == "Battle Shout" then shout.expires = GetTime() + (shout.duration or SHOUT_DEFAULT) end
+  if name and WT.CD_BASE[name] then
+    WT.NoteCast(name)
+    -- Out of combat the real cooldown is readable a moment later.
+    if not WT.fight then C_Timer.After(0.2, function() WT.SyncCooldown(name) end) end
+  end
   local f = WT.fight
-  if not f or unit ~= "player" then return end
-  if WT.IsSecret(spellID) then f.castsVisible = false; return end
-  if f.castsVisible == nil then f.castsVisible = true end
-  if spellID == WT.spells["Battle Shout"] then
-    f.shoutExpires = GetTime() + (f.shoutDuration or 120)
+  if f then
+    f.casts[spellID] = (f.casts[spellID] or 0) + 1
+    if name == "Execute" then f.execCasts = f.execCasts + 1 end
   end
 end)
+WT.On("SPELLS_CHANGED", function() nameById.stale = true end)
+WT.RageIndicatorWorks = function()
+  local label, curve = rageIndicator(), curveForCap(WT.db.rageCap)
+  if not label or not curve then return "no curve API" end
+  local ok, err = pcall(function()
+    label:SetTextColor(UnitPowerPercent("player", Enum.PowerType.Rage, false, curve):GetRGBA())
+  end)
+  hideRage()
+  return ok and "works" or ("error: " .. tostring(err):sub(1, 60))
+end

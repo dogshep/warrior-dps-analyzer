@@ -36,12 +36,21 @@ local function meterBreakdown()
   return { total = total, spells = spells }
 end
 
+local function castsOf(f, name)
+  local id = WT.spells[name]
+  return id and f.casts[id] or 0
+end
+
+-- Used during the fight? Our own casts are readable on Forever; fall back to the cooldown start.
 local function usedDuring(name, f)
+  if castsOf(f, name) > 0 then return true end
   local start = WT.CooldownStart(name)
-  if start == nil then return nil end
+  if start == nil then return next(f.casts) and false or nil end
   return start > 0 and start >= f.start - 1
 end
 
+-- Main attacks on a short cooldown: how many casts out of how many possible.
+local MAIN_ATTACKS = { "Bloodthirst", "Mortal Strike", "Whirlwind" }
 local function report(f)
   local dur = f.stop - f.start
   local lines, advice = {}, {}
@@ -55,15 +64,32 @@ local function report(f)
     end
     table.insert(lines, ("%s%s, %d DPS. %s"):format(f.boss and "Boss fight " or "Fight ", fmtTime(dur),
       math.floor(meter.total / math.max(dur, 1)), table.concat(parts, ", ")))
-    if f.executeSeen then
-      local exec = 0
-      for _, s in ipairs(meter.spells) do if s.id == WT.spells["Execute"] then exec = s.amount end end
-      if exec == 0 then
-        table.insert(advice, "Execute phase came but Execute did no damage. Below 20% it is your main button.")
-      end
-    end
   else
     table.insert(lines, ("%s%s (no damage breakdown: %s)"):format(f.boss and "Boss fight " or "Fight ", fmtTime(dur), why))
+  end
+
+  -- Execute phase: how many Executes from the first Execute window to the end.
+  if f.execStart then
+    local execDur = f.stop - f.execStart
+    table.insert(lines, ("Execute phase %ds: %d Executes."):format(math.floor(execDur + 0.5), f.execCasts))
+    if f.execCasts == 0 and execDur > 4 then
+      table.insert(advice, "The Execute phase came but you never cast Execute. Below 20% it is your main button.")
+    end
+  end
+
+  -- Main attacks, judged outside the Execute phase only.
+  local active = (f.execStart or f.stop) - f.start
+  if active > 30 then
+    for _, name in ipairs(MAIN_ATTACKS) do
+      local n, len = castsOf(f, name), WT.CooldownLength(name)
+      if n > 0 and len then
+        local possible = math.floor(active / len) + 1
+        if n / possible < 0.7 then
+          table.insert(advice, ("%s: %d casts, about %d possible. Press it the moment it comes off cooldown.")
+            :format(name, n, possible))
+        end
+      end
+    end
   end
 
   -- Cooldowns: only judged on bosses (dungeon trash pace decides whether they are back).
@@ -73,8 +99,9 @@ local function report(f)
         local used = usedDuring(name, f)
         if used == false then
           table.insert(advice, name .. " was ready on this boss and not used.")
-        elseif used and name == "Death Wish" then
-          table.insert(lines, "Death Wish used.")
+        elseif used then
+          table.insert(lines, ("%s used%s."):format(name,
+            castsOf(f, name) > 1 and (" " .. castsOf(f, name) .. " times") or ""))
         end
       end
     end

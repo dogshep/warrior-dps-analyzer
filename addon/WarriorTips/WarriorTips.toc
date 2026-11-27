@@ -2,7 +2,7 @@
 ## Title: Warrior Tips
 ## Notes: Quiet, opt-in live tips for warriors on WoW Forever, plus a short report card after each fight.
 ## Author: Shep
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariablesPerCharacter: WarriorTipsDB
 
 Core.lua

@@ -9,7 +9,7 @@
 local ADDON, WT = ...
 _G.WarriorTips = WT
 
-WT.version = "0.1.0"
+WT.version = "0.2.0"
 
 local DEFAULTS = {
   enabled = true,
@@ -20,7 +20,7 @@ local DEFAULTS = {
   tips = {
     execute = true,      -- Execute became usable
     cooldowns = true,    -- big cooldown ready when a boss pull starts
-    rage = true,         -- rage capping (only if rage is readable in combat)
+    rage = true,         -- rage capping (a display-only indicator when rage is secret)
     shout = true,        -- Battle Shout missing or about to drop
     reactive = false,    -- Overpower / Revenge usable
   },
@@ -92,6 +92,55 @@ function WT.CooldownLeft(name)
   return math.max(0, start + dur - GetTime())
 end
 
+-- Cooldowns are secret in combat on Forever, but our own cast events are not.
+-- So we remember when each tracked spell is ready: from a clean cooldown read
+-- (out of combat) or from our own cast plus the spell's cooldown length.
+-- Lengths start at the base values and are learned from clean reads (talents).
+WT.CD_BASE = { ["Death Wish"] = 180, Recklessness = 1800, ["Blood Fury"] = 120, Bloodrage = 60,
+  Bloodthirst = 6, ["Mortal Strike"] = 6, Whirlwind = 10 }
+WT.readyAt = {}
+
+function WT.CooldownLength(name)
+  local learned = WT.db and WT.db.cdLength and WT.db.cdLength[name]
+  return learned or WT.CD_BASE[name]
+end
+
+-- Update the tracker from a clean read, if the cooldown is readable right now.
+function WT.SyncCooldown(name)
+  local id = WT.spells[name]
+  if not id then return end
+  local cd = WT.Read(C_Spell.GetSpellCooldown, id)
+  if type(cd) ~= "table" then return end
+  local start, dur = cd.startTime, cd.duration
+  if isSecret(start) or isSecret(dur) or not start or not dur then return end
+  if start == 0 or dur <= 1.5 then
+    WT.readyAt[name] = 0
+  else
+    WT.readyAt[name] = start + dur
+    -- A fresh cooldown shows its full length: remember it (talents change it).
+    if WT.db and GetTime() - start < 2 and WT.CD_BASE[name] then
+      WT.db.cdLength = WT.db.cdLength or {}
+      WT.db.cdLength[name] = dur
+    end
+  end
+end
+
+-- We cast it just now: it's ready again after its cooldown length.
+function WT.NoteCast(name)
+  local len = WT.CooldownLength(name)
+  if len then WT.readyAt[name] = GetTime() + len end
+end
+
+-- Seconds until ready: live read when possible, else the tracker. nil if unknown.
+function WT.CooldownLeftTracked(name)
+  if not WT.Knows(name) then return nil end
+  local live = WT.CooldownLeft(name)
+  if live ~= nil then return live end
+  local at = WT.readyAt[name]
+  if at == nil then return nil end
+  return math.max(0, at - GetTime())
+end
+
 -- When the spell's current cooldown started (GetTime clock), 0 if ready, nil if hidden.
 function WT.CooldownStart(name)
   local id = WT.spells[name]
@@ -124,10 +173,13 @@ function WT.ShoutLeft()
   local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
   if not ok or isSecret(aura) then return nil end
   if aura == nil then
-    -- nil can mean "missing" or "hidden"; only trust it when auras are not secret.
-    if C_Secrets and C_Secrets.ShouldSpellAuraBeSecret then
-      local okS, secret = pcall(C_Secrets.ShouldSpellAuraBeSecret, id)
-      if not okS or secret then return nil end
+    -- nil can mean "missing" or "hidden" (Forever returns nil for a hidden aura
+    -- in combat); only trust it when auras are not secret right now.
+    if C_Secrets then
+      local all = WT.Read(C_Secrets.ShouldAurasBeSecret)
+      local one = WT.Read(C_Secrets.ShouldSpellAuraBeSecret, id)
+      if all ~= false and all ~= nil then return nil end
+      if one ~= false and one ~= nil then return nil end
     end
     return 0
   end
