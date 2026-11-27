@@ -25,6 +25,14 @@ export const BEST_ENCHANTS = {
 const TWO_HAND_EXTRA = [[2646, 'Agility (+25)'], [8215, 'Strength (+25)']];
 const SLOT_LABEL = { 0: 'Head', 2: 'Shoulder', 3: 'Back', 4: 'Chest', 5: 'Wrist', 6: 'Hands', 8: 'Legs', 9: 'Feet', 14: 'Main hand', 15: 'Off hand' };
 
+// names.json tables are looked up by ids that come from the log. Without a prototype, an id like "constructor"
+// finds nothing instead of a built-in function.
+export function safeNames(names) {
+  const out = Object.create(null);
+  for (const [k, v] of Object.entries(names)) out[k] = v && typeof v === 'object' && !Array.isArray(v) ? Object.assign(Object.create(null), v) : v;
+  return out;
+}
+
 export function enchantName(names, effectId, simSlot) {
   const byType = names.enchants[effectId];
   if (!byType) return effectId ? `#${effectId}` : '';

@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Only this site's own scripts run. The sim needs wasm-unsafe-eval; inline style attributes draw the bars. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://*.warcraftlogs.com https://*.workers.dev; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Warrior DPS Analyzer</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -49,7 +52,7 @@
         <label>Iterations <input id="iters" type="number" value="300" min="50" max="5000" step="50"></label>
       </div>
     </details>
-    <button id="go" class="primary">Analyze</button>
+    <button id="go" class="primary">Analyze</button> <button id="cancel" hidden>Cancel sim</button>
   </section>
 
   <section id="out" hidden>

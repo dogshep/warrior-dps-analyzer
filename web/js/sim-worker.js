@@ -13,10 +13,11 @@ function load(report) {
     const counted = res.body.pipeThrough(new TransformStream({
       transform(chunk, ctl) { got += chunk.length; report(Math.min(1, got / total)); ctl.enqueue(chunk); },
     }));
-    const bytes = await new Response(counted.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    // Compiles while it downloads instead of after.
+    const wasm = new Response(counted.pipeThrough(new DecompressionStream('gzip')), { headers: { 'Content-Type': 'application/wasm' } });
     const go = new Go();
     const done = new Promise(r => (self.wasmready = r));
-    const { instance } = await WebAssembly.instantiate(bytes, go.importObject);
+    const { instance } = await WebAssembly.instantiateStreaming(wasm, go.importObject);
     go.run(instance);
     await done;
   })();
@@ -28,7 +29,7 @@ const CHUNKS = 10;
 // Runs the iterations in chunks so progress can be reported, then merges them: DPS is the mean of equal-sized
 // chunks, and action metrics are concatenated (they are sums over iterations, which the page adds up by name).
 async function run(request, report) {
-  const total = request.simOptions.iterations;
+  const total = Math.min(5000, Math.max(1, Math.round(Number(request.simOptions.iterations)) || 300));
   const chunks = total >= CHUNKS * 10 ? CHUNKS : 1;
   const per = Math.ceil(total / chunks);
   const dps = [], actions = [];

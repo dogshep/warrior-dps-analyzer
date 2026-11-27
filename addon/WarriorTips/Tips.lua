@@ -7,6 +7,9 @@
 
 local _, WT = ...
 
+-- Reactive abilities checked each tick (a constant, so the tick makes no new table).
+local REACTIVE = { "Overpower", "Revenge" }
+
 local TICK = 0.25
 local BIG_COOLDOWNS = { "Death Wish", "Recklessness", "Blood Fury" }
 
@@ -118,7 +121,7 @@ local function tick()
   end
 
   -- Reactive abilities (off by default).
-  for _, n in ipairs({ "Overpower", "Revenge" }) do
+  for _, n in ipairs(REACTIVE) do
     local id = WT.spells[n]
     if id then
       local usable = WT.Read(C_Spell.IsSpellUsable, id)

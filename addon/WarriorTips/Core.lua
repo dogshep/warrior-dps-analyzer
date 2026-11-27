@@ -237,8 +237,10 @@ end)
 function WT.On(event, fn)
   if not handlers[event] then
     handlers[event] = {}
-    -- Some events don't exist on every client; ignore those.
-    pcall(events.RegisterEvent, events, event)
+    -- Some events don't exist on every client; ignore those. Unit events only matter for the player, so they are
+    -- registered for "player" alone (otherwise every raid member's and nameplate's casts fire them in combat).
+    local ok = event:sub(1, 5) == "UNIT_" and events.RegisterUnitEvent and pcall(events.RegisterUnitEvent, events, event, "player")
+    if not ok then pcall(events.RegisterEvent, events, event) end
   end
   table.insert(handlers[event], fn)
 end
