@@ -11,7 +11,7 @@ It runs entirely in your browser:
 
 ## Recording a good log
 
-- Type `/combatlog` before you pull. The file goes to `World of Warcraft/_classic_era_/Logs/`.
+- Type `/combatlog` before you pull. The file goes to `World of Warcraft/_forever_/Logs/`.
 - Turn on **Advanced Combat Logging** (System > Network). Without it the log has no gear and no rage data.
 
 ## Updating the sim
