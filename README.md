@@ -68,3 +68,7 @@ For a local copy, add `http://localhost:8000/` as a second redirect URL, or past
 ## In-game addon
 
 `addon/WarriorTips` is a companion WoW Forever addon with live tips and a post-fight report card. See [addon/README.md](addon/README.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE). The addon folder carries its own copy (`addon/WarriorTips/LICENSE.txt`) so it ships with the download.
