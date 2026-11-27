@@ -277,7 +277,8 @@ const UPGRADE_TIME_CAP_MS = 120000;
 const UPGRADE_WORKERS = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
 let upgradeTable = null;
 
-function upgradeGroups() { return ['open', ...($('upgRaid').checked ? ['raid'] : []), ...($('upgPvp').checked ? ['pvp'] : [])]; }
+// The ticked source kinds, as the letters upgrades.json uses.
+function upgradeKinds() { return [...document.querySelectorAll('.upgKind:checked')].map(el => el.value).join(''); }
 
 // Fights per candidate for n candidates (the current gear is simmed at twice that), and the time it should take.
 function upgradePlan(n) {
@@ -311,8 +312,8 @@ async function findUpgrades() {
     const probe = buildRequest(a, last.parser, names, apls, opts);
     const gear = probe.raid.parties[0].players[0].equipment.items;
     if (!gear.some(g => g.id)) throw new Error('No gear in this log, so there is nothing to compare against.');
-    const cands = pickCandidates(gear, upgradeTable, a.preset, a.combatant?.faction, { max: Number($('upgMax').value), groups: upgradeGroups() });
-    if (!cands.length) { $('upgOut').innerHTML = '<p>Nothing in the upgrade list beats what you wear for these sources. Try including raid drops or PvP rewards.</p>'; return; }
+    const cands = pickCandidates(gear, upgradeTable, a.preset, a.combatant?.faction, { max: Number($('upgMax').value), kinds: upgradeKinds() });
+    if (!cands.length) { $('upgOut').innerHTML = `<p>${upgradeKinds() ? 'Nothing in the upgrade list beats what you wear from these sources. Try ticking more of them.' : 'Tick at least one source.'}</p>`; return; }
     const { iters } = upgradePlan(cands.length);
     const base = buildRequest(a, last.parser, names, apls, { ...opts, iterations: iters });
     const t0 = performance.now();
@@ -359,10 +360,8 @@ async function findUpgrades() {
 }
 
 function renderUpgrades(rows, gear, names, cands) {
-  const tags = id => {
-    const [, , , group] = upgradeTable.items[id] || [];
-    return (group === 'raid' ? '<span class="tag">Raid</span>' : group === 'pvp' ? '<span class="tag">PvP</span>' : '');
-  };
+  const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
+  const tags = id => [...(upgradeTable.items[id]?.[3] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
   const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[0] || `#${id}`)}</a>`;
   const found = new Set(rows.map(r => r.slot));
   const none = [...new Set(cands.map(c => c.slot))].filter(s => !found.has(s)).map(s => SLOT_NAMES[s]);

@@ -32,9 +32,10 @@ const sideOf = f => (f === 1 ? 1 : f === 0 ? 2 : 0);
 // Picks what to sim. gear: the 17 sim slots as in a RaidSimRequest ({id, enchant} or {}). Returns
 // [{slot, id, est}] where est is the build-time guess at the DPS gain over the current item, best first.
 // At most `perSlot` per slot and `max` in all: every slot with a likely upgrade gets its best candidate first,
-// then second picks fill what is left of the budget, biggest guesses first. groups: which sources to include
-// ('open' dungeons, crafting, quests, vendors and reputation; 'raid'; 'pvp').
-export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max = 16, minGain = 1, groups = ['open', 'raid'] } = {}) {
+// then second picks fill what is left of the budget, biggest guesses first. kinds: the sources to include, as
+// letters (d dungeon or world drop, r raid, c crafted, q quest, v vendor, f reputation, p PvP); an item with
+// several sources is in when any of them is.
+export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max = 16, minGain = 1, kinds = 'drcqvf' } = {}) {
   const p = table?.presets?.[preset];
   if (!p) return [];
   const side = sideOf(faction);
@@ -63,7 +64,7 @@ export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max 
       // Weapons are only picked when the build simmed them; weights alone misjudge speed and procs.
       if (id === cur || id === other || (slot >= 14 && !simmed)) continue;
       const meta = table.items[id];
-      if (!meta || (side && meta[1] && meta[1] !== side) || !groups.includes(meta[3])) continue;
+      if (!meta || (side && meta[1] && meta[1] !== side) || ![...meta[3]].some(k => kinds.includes(k))) continue;
       const est = val - curVal;
       if (est < minGain) continue;
       picks.push({ slot, id, est: Number.isFinite(est) ? est : null, val });

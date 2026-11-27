@@ -14,12 +14,13 @@ It runs entirely in your browser:
 
 Simming every item for every player would take far too long, so the work is split in two.
 
-- **At build time** (`scripts/precompute-upgrades.mjs`, about 11 minutes on 4 cores, cached in CI by wowsims commit):
+- **At build time** (`scripts/precompute-upgrades.mjs`, about 14 minutes on 4 cores, cached in CI by wowsims commit):
   for each rotation it sims stat weights in the wowsims pre-raid gear, prices every level 60 rare or better item a
   warrior can use and can get in Forever now (wowsims' phase 1: no drops from raids Forever hasn't opened) with them, and sims the ones weights can't price (weapons, procs, on-use effects) swapped into
   that gear. The result, with each item's sources from the wowsims item database, is `web/sim/upgrades.json`.
 - **In the browser** the page takes the best one or two of those per slot that beat what the player wears (8, 16
-  or 24 in all), sims each one swapped into the player's own gear and fight, and lists the real gains.
+  or 24 in all) from the sources ticked (dungeons, raids, crafted, quests, vendors, reputation, PvP), sims each one
+  swapped into the player's own gear and fight, and lists the real gains.
 
 Two sims of different gear don't share their dice rolls, so a gain from 100 fights is only good to about ±13 DPS.
 The page picks the fight count (200 to 1,000) so the run takes about a minute, runs sims side by side on spare

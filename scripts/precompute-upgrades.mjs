@@ -6,8 +6,8 @@
 // 2. Every candidate gets a stat-weight score. Per slot, the best scores, plus items whose value hides in
 //    procs, on-use effects, weapon skill or set bonuses, are simmed swapped into that same gear.
 // 3. web/sim/upgrades.json keeps, per rotation and slot, each item's DPS change from the reference item
-//    (simmed, or estimated from weights), and for every simmed item [where it comes from, faction (0 both,
-//    1 Alliance, 2 Horde), phase, 'open' | 'raid' | 'pvp'].
+//    (simmed, or estimated from weights), and for the items the page may suggest [where it comes from, faction
+//    (0 both, 1 Alliance, 2 Horde), phase, source kinds (see KINDS)].
 //
 // Usage: node scripts/precompute-upgrades.mjs <wowsims db.json> <web/sim dir>
 // Env: UPGRADE_ITERS (item sims, default 300), UPGRADE_WEIGHT_ITERS (default 2000), UPGRADE_THREADS (default: CPU
@@ -65,11 +65,14 @@ const REP_LEVELS = { 4: 'Neutral', 5: 'Friendly', 6: 'Honored', 7: 'Revered', 8:
 // Stats that matter to a DPS warrior, and how much of each the weight sims add. Big steps and many iterations:
 // two sims with different gear drift apart in their random rolls, so a small difference drowns in noise.
 const WEIGHT_STATS = { 0: 100, 1: 100, 14: 200, 17: 50, 18: 70, 19: 50, 21: 50 };
-// Per slot and source group, how many weapons (best by stat weights and weapon DPS) and how many items with procs,
+// Source kinds, as letters in upgrades.json: d dungeon or world drop, r raid, c crafted, q quest, v vendor,
+// f reputation, p PvP. The page filters on them, so each kind (and each faction) gets its own picks below.
+const KINDS = 'drcqvfp';
+// Per slot, kind and faction, how many weapons (best by stat weights and weapon DPS) and how many items with procs,
 // on-use effects or weapon skill get simmed. Stat weights price everything else, and price it well.
-const SIM_TOP = { open: 8, raid: 6, pvp: 3 };
-// Per slot and source group, how many of the best items the page may pick from (and gets sources for).
-const KEEP_TOP = 12;
+const SIM_TOP = 4;
+// Per slot, kind and faction, how many of the best items the page may pick from (and gets sources for).
+const KEEP_TOP = 8;
 
 function sourceText(db, it) {
   const zone = id => db.zoneName.get(id) || '';
@@ -102,13 +105,20 @@ function factionOf(it) {
   return f.has(0) || f.size !== 1 ? 0 : [...f][0];
 }
 
-// 'pvp' for PvP rewards, 'raid' when every source is a raid (a drop there, or a quest that starts there), else
-// 'open' (dungeons, crafting, quests, vendors, reputation).
-function groupOf(it, raidZones) {
+// The kinds of source an item has (see KINDS). A PvP reward is only 'p', though rank vendors sell it. A quest that
+// starts in a raid counts as a raid.
+function kindsOf(it, raidZones) {
   const src = it.sources || [];
-  if (src.some(s => s.pvp)) return 'pvp';
-  const raid = s => (s.drop && s.drop.difficulty === 2) || (s.quest && raidZones.has(s.quest.zoneId));
-  return src.length && src.every(raid) ? 'raid' : 'open';
+  if (src.some(s => s.pvp)) return 'p';
+  const k = new Set();
+  for (const s of src) {
+    if (s.drop) k.add(s.drop.difficulty === 2 ? 'r' : 'd');
+    else if (s.quest) k.add(raidZones.has(s.quest.zoneId) ? 'r' : 'q');
+    else if (s.crafted) k.add('c');
+    else if (s.soldBy) k.add('v');
+    else if (s.rep) k.add('f');
+  }
+  return [...KINDS].filter(c => k.has(c)).join('');
 }
 
 // A level 60 rare or better a warrior can equip, with something for a DPS warrior on it, that the item database
@@ -162,7 +172,9 @@ async function main() {
   };
   const byId = new Map(raw.items.map(it => [it.id, it]));
   const raidZones = new Set(raw.items.flatMap(it => (it.sources || []).filter(s => s.drop?.difficulty === 2).map(s => s.drop.zoneId)));
-  const group = new Map(raw.items.map(it => [it.id, groupOf(it, raidZones)]));
+  const kinds = new Map(raw.items.map(it => [it.id, kindsOf(it, raidZones)]));
+  // The items of a kind one faction can get, best first.
+  const ofKind = (scored, k, side) => scored.filter(x => kinds.get(x.it.id).includes(k) && [0, side].includes(factionOf(x.it)));
   const candidates = raw.items.filter(usable);
   const t0 = Date.now();
   const { sim, close } = await pool(simDir, threads);
@@ -201,13 +213,10 @@ async function main() {
       const refEp = refItem?.scalingOptions?.['0'] ? ep(refItem, slot) : 0;
       const scored = pool.map(it => ({ it, val: ep(it, slot) - refEp, simmed: 0 })).sort((a, b) => b.val - a.val);
       const pick = new Set();
-      for (const [g, top] of Object.entries(SIM_TOP)) {
-        // PvP items come in an Alliance and a Horde version, so each side gets its own picks.
-        for (const side of g === 'pvp' ? [1, 2] : [null]) {
-          const inGroup = scored.filter(x => group.get(x.it.id) === g && (side === null || factionOf(x.it) === side));
-          if (slot >= 14) for (const x of inGroup.slice(0, top)) pick.add(x);
-          for (const x of inGroup.filter(y => special(y.it)).slice(0, top)) pick.add(x);
-        }
+      for (const k of KINDS) for (const side of [1, 2]) {
+        const inKind = ofKind(scored, k, side);
+        if (slot >= 14) for (const x of inKind.slice(0, SIM_TOP)) pick.add(x);
+        for (const x of inKind.filter(y => special(y.it)).slice(0, SIM_TOP)) pick.add(x);
       }
       // The other ring, trinket or weapon in the reference gear: a unique item can't be worn twice.
       const pair = { 10: 11, 12: 13, 14: 15 }[slot];
@@ -226,8 +235,9 @@ async function main() {
       scored.sort((a, b) => (slot >= 14 ? b.simmed - a.simmed : 0) || b.val - a.val);
       // [id, DPS change from the reference item, 1 if simmed else 0 (priced by stat weights)], best first.
       slots[key] = scored.map(x => [x.it.id, round(x.val), x.simmed]);
-      for (const g of Object.keys(SIM_TOP)) for (const x of scored.filter(y => group.get(y.it.id) === g && (slot < 14 || y.simmed)).slice(0, KEEP_TOP)) {
-        out.items[x.it.id] ??= [sourceText(db, x.it), factionOf(x.it), x.it.phase || 1, g];
+      const trusted = scored.filter(y => slot < 14 || y.simmed);
+      for (const k of KINDS) for (const side of [1, 2]) for (const x of ofKind(trusted, k, side).slice(0, KEEP_TOP)) {
+        out.items[x.it.id] ??= [sourceText(db, x.it), factionOf(x.it), x.it.phase || 1, kinds.get(x.it.id)];
       }
       const best = scored[0];
       console.log(`${preset} ${key}: ${pool.length} items, simmed ${pick.size}, best ${best.it.name} (${best.val >= 0 ? '+' : ''}${round(best.val)}${best.simmed ? ', simmed' : ''})`);

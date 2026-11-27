@@ -43,7 +43,7 @@ sha=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
 date=subprocess.check_output(["git","log","-1","--format=%cI"],text=True).strip()
 json.dump({"repo":"wowsims/forever","commit":sha,"commitDate":date,"builtAt":datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")},open(sys.argv[1],"w"),indent=1)
 PY
-# The ranked item list behind "Gear upgrades" (about 11 minutes on 4 cores). SKIP_UPGRADES=1 leaves it out.
+# The ranked item list behind "Gear upgrades" (about 14 minutes on 4 cores). SKIP_UPGRADES=1 leaves it out.
 if [ -z "${SKIP_UPGRADES:-}" ]; then
   node "$ROOT/scripts/precompute-upgrades.mjs" assets/database/db.json "$OUT"
 fi
