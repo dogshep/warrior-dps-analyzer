@@ -351,6 +351,7 @@ WT.On("PLAYER_LOGIN", function()
   WT.db = WarriorTipsDB
   placeFrame()
   WT.ApplyStyle()
+  WT.debug = WT.db.debug or false
   WT.RefreshSpells()
   local _, class = UnitClass("player")
   WT.isWarrior = class == "WARRIOR"
@@ -385,6 +386,7 @@ local function help()
   WT.Print("    colors: gold, white, red, orange, yellow, green, cyan, blue, purple, pink, or e.g. ff8800")
   WT.Print("  /wtips sound on|off, /wtips unlock | lock, /wtips test")
   WT.Print("  /wtips probe  - check what Forever lets addons read in your next fight")
+  WT.Print("  /wtips debug on|off  - full report card after every fight, for testing")
   WT.Print("  /wtips status")
 end
 
@@ -416,7 +418,10 @@ SlashCmdList.WARRIORTIPS = function(input)
   elseif cmd == "test" then
     WT.ShowSample("color")
   elseif cmd == "probe" then WT.ArmProbe()
-  elseif cmd == "debug" then WT.debug = not WT.debug; WT.Print("debug " .. tostring(WT.debug))
+  elseif cmd == "debug" then
+    if a == "on" or a == "off" then WT.debug = a == "on" else WT.debug = not WT.debug end
+    db.debug = WT.debug
+    WT.Print("debug mode " .. (WT.debug and "on: full report card after every fight, plus errors" or "off"))
   elseif cmd == "status" then status()
   else help() end
 end

@@ -170,3 +170,19 @@ for _, c in ipairs({ "size 26", "color red", "ragecolor 00ff88", "color nope", "
 end
 assert(ns.db.fontSize == 40 and ns.db.color[1] == 1 and ns.db.color[2] == 0.25 and math.abs(ns.db.rageColor[3] - 136 / 255) < 1e-6, "style settings")
 print("== style commands ok")
+
+-- Debug mode: a short trash fight still gets the full card.
+SlashCmdList.WARRIORTIPS("debug on")
+local before = #printed
+UnitLevel = function() return 60 end
+UnitClassification = function() return "normal" end
+inCombat = true
+fire("PLAYER_REGEN_DISABLED")
+fight(8)
+inCombat = false
+fire("PLAYER_REGEN_ENABLED")
+advance(3)
+print("== debug report on an 8s trash fight")
+local sawDebug = false
+for i = before + 1, #printed do print("  " .. printed[i]); if printed[i]:find("%[debug%] casts:") then sawDebug = true end end
+assert(sawDebug, "debug report missing")

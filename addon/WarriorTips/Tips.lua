@@ -64,13 +64,18 @@ local function bossPull(f)
   end
 end
 
-local function shoutLeft()
+local function shoutLeft(f)
   local live = WT.ShoutLeft()
   if live ~= nil then
     shout.expires = GetTime() + live
+    f.shoutSource = "live"
     return live
   end
-  if shout.expires then return math.max(0, shout.expires - GetTime()) end
+  if shout.expires then
+    f.shoutSource = f.shoutSource or "tracked from pull + casts"
+    return math.max(0, shout.expires - GetTime())
+  end
+  f.shoutSource = "unknown"
   return nil
 end
 
@@ -163,6 +168,7 @@ local function tick()
   -- Execute phase: Execute turns usable when the target drops under 20%.
   local exec = WT.UsableIgnoringRage("Execute")
   if exec ~= nil then
+    if exec and f.prevExec == false and not f.execStartAny then f.execStartAny = now end
     if exec and f.prevExec == false and targetWorthIt() then
       if not f.execStart then f.execStart = now end
       local msg = "Execute phase: Execute is your main button now"
@@ -188,6 +194,7 @@ local function tick()
 
   -- Rage capping: a real tip when rage is readable, else the indicator.
   local rage = WT.Rage()
+  if rage == nil then f.rageSecretTicks = f.rageSecretTicks + 1 end
   if rage ~= nil then
     hideRage()
     f.rageSamples = f.rageSamples + 1
@@ -201,11 +208,11 @@ local function tick()
       f.capSince = nil
     end
   else
-    updateRageIndicator()
+    if updateRageIndicator() then f.rageIndicator = true end
   end
 
   -- Battle Shout missing or about to drop.
-  local left = WT.Knows("Battle Shout") and shoutLeft() or nil
+  local left = WT.Knows("Battle Shout") and shoutLeft(f) or nil
   if left ~= nil then
     if left == 0 then
       f.shoutMissing = f.shoutMissing + TICK
@@ -232,8 +239,11 @@ local function startFight()
   sync()
   WT.fight = {
     start = GetTime(), tips = {}, prevExec = false, rageSamples = 0, rageCapped = 0, shoutMissing = 0,
-    casts = {}, execCasts = 0, wasReady = {},
+    casts = {}, execCasts = 0, wasReady = {}, rageSecretTicks = 0, pullReady = {},
   }
+  for _, n in ipairs(BIG_COOLDOWNS) do
+    if WT.Knows(n) then WT.fight.pullReady[n] = WT.CooldownLeftTracked(n) end
+  end
   if ticker then ticker:Cancel() end
   ticker = C_Timer.NewTicker(TICK, function()
     local ok, err = pcall(tick)

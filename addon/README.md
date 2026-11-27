@@ -45,6 +45,8 @@ After a boss fight (or every fight over 15 s with `/wtips report all`) the chat 
 /wtips unlock | lock       move the tip text
 /wtips test                show a sample tip
 /wtips probe               check what Forever lets addons read in combat
+/wtips debug on|off        testing: full report card after every fight, even short
+                           trash, with every number the addon saw, plus Lua errors
 /wtips status
 ```
 

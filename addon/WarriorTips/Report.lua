@@ -51,6 +51,7 @@ end
 
 -- Main attacks on a short cooldown: how many casts out of how many possible.
 local MAIN_ATTACKS = { "Bloodthirst", "Mortal Strike", "Whirlwind" }
+local debugReport   -- defined below
 local function report(f)
   local dur = f.stop - f.start
   local lines, advice = {}, {}
@@ -121,15 +122,67 @@ local function report(f)
 
   for _, l in ipairs(lines) do WT.Print(l) end
   for _, a in ipairs(advice) do WT.Print("|cffffd100Tip:|r " .. a) end
+  if WT.debug then debugReport(f, meter) end
+end
+
+-- Debug mode: everything the addon saw, whatever the fight.
+function debugReport(f, meter)
+  local P = function(s) WT.Print("|cff88ccff[debug]|r " .. s) end
+  local dur = f.stop - f.start
+  P(("fight %.1fs, boss %s, tips shown: %s"):format(dur, tostring(f.boss or false),
+    #f.tips > 0 and table.concat(f.tips, ", ") or "none"))
+  if meter then
+    local parts = {}
+    for _, s in ipairs(meter.spells) do
+      parts[#parts + 1] = ("%s %d (%d%%)"):format(s.name, s.amount, math.floor(s.amount / meter.total * 100 + 0.5))
+    end
+    P("damage: " .. table.concat(parts, ", "))
+  end
+  local casts = {}
+  for id, n in pairs(f.casts) do casts[#casts + 1] = { name = spellName(id), n = n } end
+  table.sort(casts, function(a, b) return a.n > b.n end)
+  local parts = {}
+  for _, c in ipairs(casts) do parts[#parts + 1] = c.name .. " " .. c.n end
+  P("casts: " .. (#parts > 0 and table.concat(parts, ", ") or "none seen"))
+  local execAt = f.execStart or f.execStartAny
+  P(execAt and ("execute phase from %.0fs (%s target), %d Executes"):format(execAt - f.start,
+    f.execStart and "boss/elite" or "normal", f.execCasts) or "execute phase: not seen")
+  local active = (execAt or f.stop) - f.start
+  for _, name in ipairs(MAIN_ATTACKS) do
+    if WT.Knows(name) then
+      local len = WT.CooldownLength(name)
+      P(("%s: %d casts, about %d possible in %.0fs (cooldown %ss)"):format(name, castsOf(f, name),
+        math.floor(active / len) + 1, active, tostring(len)))
+    end
+  end
+  for _, name in ipairs({ "Death Wish", "Recklessness", "Blood Fury", "Bloodrage" }) do
+    if WT.Knows(name) then
+      local atPull = f.pullReady[name]
+      local now = WT.CooldownLeftTracked(name)
+      P(("%s: at pull %s, cast %d, now %s, length %ss"):format(name,
+        atPull == nil and "unknown" or atPull == 0 and "ready" or ("%ds left"):format(atPull),
+        castsOf(f, name), now == nil and "unknown" or now == 0 and "ready" or ("%ds left"):format(now),
+        tostring(WT.CooldownLength(name))))
+    end
+  end
+  if f.rageSamples > 0 then
+    P(("rage readable: %d samples, %d at the cap"):format(f.rageSamples, f.rageCapped))
+  else
+    P("rage secret all fight; indicator " .. (f.rageIndicator and "drawn" or "not drawn"))
+  end
+  P(("Battle Shout: %s, down about %ds"):format(f.shoutSource or "not tracked", math.floor(f.shoutMissing)))
 end
 
 function WT.OnFightEnd(f)
   if WT.OnProbeFightEnd then WT.OnProbeFightEnd(f) end
   local db = WT.db
-  if not db or not WT.isWarrior or db.report == "off" then return end
+  if not db or not WT.isWarrior then return end
   local dur = f.stop - f.start
-  if db.report == "boss" and not f.boss then return end
-  if dur < 15 then return end
+  if not WT.debug then
+    if db.report == "off" then return end
+    if db.report == "boss" and not f.boss then return end
+    if dur < 15 then return end
+  end
   -- The meter needs a moment after combat to settle.
   C_Timer.After(1.5, function()
     local ok, err = pcall(report, f)
