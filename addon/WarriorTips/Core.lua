@@ -9,7 +9,7 @@
 local ADDON, WT = ...
 _G.WarriorTips = WT
 
-WT.version = "0.2.0"
+WT.version = "0.3.0"
 
 local DEFAULTS = {
   enabled = true,
@@ -25,6 +25,9 @@ local DEFAULTS = {
     reactive = false,    -- Overpower / Revenge usable
   },
   point = nil,           -- saved position of the tip text
+  fontSize = 18,         -- tip text size; the rage line is a bit smaller
+  color = { 1, 0.82, 0.3 },      -- tip text color
+  rageColor = { 1, 0.82, 0.3 },  -- rage capped line color
 }
 
 local function copyDefaults(dst, src)
@@ -208,6 +211,45 @@ local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 text:SetPoint("CENTER")
 text:SetTextColor(1, 0.82, 0.3)
 frame.text = text
+local FONT = (GameFontNormalLarge and GameFontNormalLarge.GetFont and GameFontNormalLarge:GetFont()) or "Fonts\\FRIZQT__.TTF"
+
+-- Apply font size and colors from settings to the tip text and the rage line.
+function WT.ApplyStyle()
+  local db = WT.db
+  local size = db.fontSize
+  pcall(text.SetFont, text, FONT, size, "OUTLINE")
+  text:SetTextColor(db.color[1], db.color[2], db.color[3])
+  frame:SetSize(math.max(420, size * 30), size * 2 + 4)
+  if WT.StyleRage then WT.StyleRage(FONT, math.floor(size * 0.8 + 0.5), db.rageColor) end
+end
+
+-- Named colors for /wtips color, or a hex code like ff8800.
+local COLORS = { gold = { 1, 0.82, 0.3 }, white = { 1, 1, 1 }, red = { 1, 0.25, 0.25 }, orange = { 1, 0.55, 0.1 },
+  yellow = { 1, 1, 0.2 }, green = { 0.3, 1, 0.3 }, cyan = { 0.3, 0.9, 1 }, blue = { 0.4, 0.6, 1 },
+  purple = { 0.75, 0.45, 1 }, pink = { 1, 0.5, 0.8 } }
+local function parseColor(v)
+  if not v then return nil end
+  if COLORS[v] then return { unpack(COLORS[v]) } end
+  local hex = v:gsub("^#", "")
+  if hex:match("^%x%x%x%x%x%x$") then
+    return { tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 }
+  end
+end
+
+-- Open the game's color picker for a setting ("color" or "rageColor").
+local function pickColor(key)
+  local c = WT.db[key]
+  local function apply()
+    local r, g, b = ColorPickerFrame:GetColorRGB()
+    WT.db[key] = { r, g, b }; WT.ApplyStyle(); WT.ShowSample(key)
+  end
+  local info = { r = c[1], g = c[2], b = c[3], hasOpacity = false, swatchFunc = apply,
+    cancelFunc = function() WT.db[key] = c; WT.ApplyStyle() end }
+  if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
+    ColorPickerFrame:SetupColorPickerAndShow(info)
+    return true
+  end
+end
 
 local bg = frame:CreateTexture(nil, "BACKGROUND")
 bg:SetAllPoints()
@@ -247,6 +289,12 @@ function WT.Tip(key, msg, again, id)
 end
 
 function WT.ResetThrottle() wipe(lastByKey) end
+
+-- Preview after a style change: a sample tip, plus the rage line for a few seconds.
+function WT.ShowSample(key)
+  WT.Show("Execute phase: Execute is your main button now")
+  if WT.PreviewRage then WT.PreviewRage(4) end
+end
 
 local function placeFrame()
   frame:ClearAllPoints()
@@ -302,6 +350,8 @@ WT.On("PLAYER_LOGIN", function()
   copyDefaults(WarriorTipsDB, DEFAULTS)
   WT.db = WarriorTipsDB
   placeFrame()
+  WT.ApplyStyle()
+  WT.debug = WT.db.debug or false
   WT.RefreshSpells()
   local _, class = UnitClass("player")
   WT.isWarrior = class == "WARRIOR"
@@ -317,6 +367,8 @@ local function status()
   local db = WT.db
   WT.Print(("v%s, tips %s, report card: %s, rage cap %d"):format(WT.version,
     db.enabled and "|cff00ff00on|r" or "|cffff0000off|r", db.report, db.rageCap))
+  local function hex(c) return ("%02x%02x%02x"):format(c[1] * 255 + 0.5, c[2] * 255 + 0.5, c[3] * 255 + 0.5) end
+  WT.Print(("  text size %d, tip color %s, rage line color %s"):format(db.fontSize, hex(db.color), hex(db.rageColor)))
   for _, k in ipairs(TIP_NAMES) do
     WT.Print(("  %s: %s"):format(k, db.tips[k] and "on" or "off"))
   end
@@ -328,8 +380,13 @@ local function help()
   WT.Print("  /wtips tip <name> on|off  - " .. table.concat(TIP_NAMES, ", "))
   WT.Print("  /wtips report boss|all|off  - when to print the report card after a fight")
   WT.Print("  /wtips ragecap <n>  - rage that counts as capping (default 80)")
+  WT.Print("  /wtips size <10-40>  - tip text size (default 18)")
+  WT.Print("  /wtips color [name or hex]  - tip color; no value opens a color picker")
+  WT.Print("  /wtips ragecolor [name or hex]  - rage capped line color")
+  WT.Print("    colors: gold, white, red, orange, yellow, green, cyan, blue, purple, pink, or e.g. ff8800")
   WT.Print("  /wtips sound on|off, /wtips unlock | lock, /wtips test")
   WT.Print("  /wtips probe  - check what Forever lets addons read in your next fight")
+  WT.Print("  /wtips debug on|off  - full report card after every fight, for testing")
   WT.Print("  /wtips status")
 end
 
@@ -346,14 +403,25 @@ SlashCmdList.WARRIORTIPS = function(input)
     db.report = a; WT.Print("report card: " .. a)
   elseif cmd == "ragecap" and tonumber(a) then
     db.rageCap = math.max(30, math.min(100, tonumber(a))); WT.Print("rage cap " .. db.rageCap)
+  elseif cmd == "size" and tonumber(a) then
+    db.fontSize = math.max(10, math.min(40, math.floor(tonumber(a)))); WT.ApplyStyle()
+    WT.Print("text size " .. db.fontSize); WT.ShowSample("color")
+  elseif cmd == "color" or cmd == "ragecolor" then
+    local key = cmd == "color" and "color" or "rageColor"
+    local c = parseColor(a)
+    if c then db[key] = c; WT.ApplyStyle(); WT.ShowSample(key)
+    elseif a or not pickColor(key) then WT.Print("unknown color. Use a name (gold, white, red, orange, yellow, green, cyan, blue, purple, pink) or a hex code like ff8800") end
   elseif cmd == "sound" and (a == "on" or a == "off") then
     db.sound = a == "on"; WT.Print("sound " .. a)
   elseif cmd == "unlock" then setUnlocked(true)
   elseif cmd == "lock" then setUnlocked(false)
   elseif cmd == "test" then
-    WT.Show("Execute phase: Execute is your main button now")
+    WT.ShowSample("color")
   elseif cmd == "probe" then WT.ArmProbe()
-  elseif cmd == "debug" then WT.debug = not WT.debug; WT.Print("debug " .. tostring(WT.debug))
+  elseif cmd == "debug" then
+    if a == "on" or a == "off" then WT.debug = a == "on" else WT.debug = not WT.debug end
+    db.debug = WT.debug
+    WT.Print("debug mode " .. (WT.debug and "on: full report card after every fight, plus errors" or "off"))
   elseif cmd == "status" then status()
   else help() end
 end

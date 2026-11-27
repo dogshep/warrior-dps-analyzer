@@ -34,12 +34,19 @@ After a boss fight (or every fight over 15 s with `/wtips report all`) the chat 
 /wtips                     help
 /wtips on | off            all live tips on or off
 /wtips tip <name> on|off   execute, cooldowns, rage, shout, reactive
-/wtips report boss|all|off when to print the report card
+/wtips report boss|all|off when to print the report card (all = every fight over 15 s)
 /wtips ragecap <n>         rage that counts as capping (default 80)
+/wtips size <10-40>        tip text size (default 18; the rage line is 80% of it)
+/wtips color [color]       tip color: gold, white, red, orange, yellow, green, cyan,
+                           blue, purple, pink or a hex code like ff8800; no value opens
+                           the color picker
+/wtips ragecolor [color]   same, for the rage capped line
 /wtips sound on|off        raid warning sound with each tip
 /wtips unlock | lock       move the tip text
 /wtips test                show a sample tip
 /wtips probe               check what Forever lets addons read in combat
+/wtips debug on|off        testing: full report card after every fight, even short
+                           trash, with every number the addon saw, plus Lua errors
 /wtips status
 ```
 

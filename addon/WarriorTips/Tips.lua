@@ -64,13 +64,18 @@ local function bossPull(f)
   end
 end
 
-local function shoutLeft()
+local function shoutLeft(f)
   local live = WT.ShoutLeft()
   if live ~= nil then
     shout.expires = GetTime() + live
+    f.shoutSource = "live"
     return live
   end
-  if shout.expires then return math.max(0, shout.expires - GetTime()) end
+  if shout.expires then
+    f.shoutSource = f.shoutSource or "tracked from pull + casts"
+    return math.max(0, shout.expires - GetTime())
+  end
+  f.shoutSource = "unknown"
   return nil
 end
 
@@ -79,35 +84,62 @@ end
 -- comes from UnitPowerPercent with a step color curve that is transparent
 -- below the cap and gold at or above it.
 ---------------------------------------------------------------------------
-local rageLabel, rageCurve, rageCurveCap
+local rageLabel, rageHolder, rageCurve, rageCurveKey, previewUntil = nil, nil, nil, nil, 0
+
+local function rageRGB()
+  local c = WT.db and WT.db.rageColor or { 1, 0.82, 0.3 }
+  return c[1], c[2], c[3]
+end
 
 local function rageIndicator()
   if rageLabel then return rageLabel end
   -- Its own frame: the tip frame hides between tips, this line must not.
   local holder = CreateFrame("Frame", "WarriorTipsRageFrame", UIParent)
+  rageHolder = holder
   holder:SetSize(300, 20)
   holder:SetPoint("TOP", _G.WarriorTipsFrame, "BOTTOM", 0, -2)
   rageLabel = holder:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   rageLabel:SetPoint("CENTER")
   rageLabel:SetText("Rage capped: Heroic Strike")
-  rageLabel:SetTextColor(1, 0.82, 0.3, 0)
+  local r, g, b = rageRGB()
+  rageLabel:SetTextColor(r, g, b, 0)
   return rageLabel
 end
 
+function WT.StyleRage(font, size)
+  local label = rageIndicator()
+  pcall(label.SetFont, label, font, size, "OUTLINE")
+  rageHolder:SetSize(math.max(300, size * 22), size + 6)
+  rageCurve = nil   -- the color lives in the curve: rebuild it
+end
+
+-- Show the rage line at full color for a few seconds (after a style change).
+function WT.PreviewRage(sec)
+  local label = rageIndicator()
+  local r, g, b = rageRGB()
+  label:SetTextColor(r, g, b, 1)
+  previewUntil = GetTime() + sec
+  C_Timer.After(sec, function()
+    if GetTime() >= previewUntil and not WT.fight then label:SetTextColor(r, g, b, 0) end
+  end)
+end
+
 local function curveForCap(cap)
-  if rageCurve and rageCurveCap == cap then return rageCurve end
+  local r, g, b = rageRGB()
+  local key = ("%d:%.3f:%.3f:%.3f"):format(cap, r, g, b)
+  if rageCurve and rageCurveKey == key then return rageCurve end
   if not (C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor) then return nil end
   local ok, curve = pcall(C_CurveUtil.CreateColorCurve)
   if not ok or not curve then return nil end
   pcall(curve.SetType, curve, Enum.LuaCurveType.Step)
-  curve:AddPoint(0, CreateColor(1, 0.82, 0.3, 0))
-  curve:AddPoint(cap / 100, CreateColor(1, 0.82, 0.3, 1))
-  rageCurve, rageCurveCap = curve, cap
+  curve:AddPoint(0, CreateColor(r, g, b, 0))
+  curve:AddPoint(cap / 100, CreateColor(r, g, b, 1))
+  rageCurve, rageCurveKey = curve, key
   return curve
 end
 
 local function hideRage()
-  if rageLabel then rageLabel:SetTextColor(1, 0.82, 0.3, 0) end
+  if rageLabel then local r, g, b = rageRGB(); rageLabel:SetTextColor(r, g, b, 0) end
 end
 
 -- Returns true if the display-only indicator is in use (rage is secret).
@@ -136,6 +168,7 @@ local function tick()
   -- Execute phase: Execute turns usable when the target drops under 20%.
   local exec = WT.UsableIgnoringRage("Execute")
   if exec ~= nil then
+    if exec and f.prevExec == false and not f.execStartAny then f.execStartAny = now end
     if exec and f.prevExec == false and targetWorthIt() then
       if not f.execStart then f.execStart = now end
       local msg = "Execute phase: Execute is your main button now"
@@ -161,6 +194,7 @@ local function tick()
 
   -- Rage capping: a real tip when rage is readable, else the indicator.
   local rage = WT.Rage()
+  if rage == nil then f.rageSecretTicks = f.rageSecretTicks + 1 end
   if rage ~= nil then
     hideRage()
     f.rageSamples = f.rageSamples + 1
@@ -174,11 +208,11 @@ local function tick()
       f.capSince = nil
     end
   else
-    updateRageIndicator()
+    if updateRageIndicator() then f.rageIndicator = true end
   end
 
   -- Battle Shout missing or about to drop.
-  local left = WT.Knows("Battle Shout") and shoutLeft() or nil
+  local left = WT.Knows("Battle Shout") and shoutLeft(f) or nil
   if left ~= nil then
     if left == 0 then
       f.shoutMissing = f.shoutMissing + TICK
@@ -205,8 +239,11 @@ local function startFight()
   sync()
   WT.fight = {
     start = GetTime(), tips = {}, prevExec = false, rageSamples = 0, rageCapped = 0, shoutMissing = 0,
-    casts = {}, execCasts = 0, wasReady = {},
+    casts = {}, execCasts = 0, wasReady = {}, rageSecretTicks = 0, pullReady = {},
   }
+  for _, n in ipairs(BIG_COOLDOWNS) do
+    if WT.Knows(n) then WT.fight.pullReady[n] = WT.CooldownLeftTracked(n) end
+  end
   if ticker then ticker:Cancel() end
   ticker = C_Timer.NewTicker(TICK, function()
     local ok, err = pcall(tick)
