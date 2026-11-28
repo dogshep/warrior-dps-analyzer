@@ -134,7 +134,7 @@ async function viaProxy(url, op, variables, fetchImpl) {
   if (res.ok && data.data?.reportData?.report && !data.errors) return data.data;
   // Private reports (404) and an exhausted shared quota (429) need the viewer's own sign-in.
   if (res.status === 404 || res.status === 429) {
-    const e = new Error(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report needs a Warcraft Logs sign-in (it may be private).');
+    const e = new Error(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report is private, so Warcraft Logs only shares it with you signed in.');
     e.needsAuth = true;
     throw e;
   }
@@ -150,7 +150,7 @@ async function gql(op, variables, fetchImpl = fetch) {
   if (!t) {
     const url = await proxy(fetchImpl);
     if (url) return viaProxy(url, op, variables, fetchImpl);
-    const e = new Error('Sign in to Warcraft Logs first.'); e.needsAuth = true; throw e;
+    const e = new Error('This copy of the page can only load reports after you sign in.'); e.needsAuth = true; throw e;
   }
   const urls = apiUrl ? [apiUrl] : APIS;
   let lastErr;
