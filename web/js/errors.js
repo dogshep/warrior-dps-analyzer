@@ -7,7 +7,7 @@ export class AuthRequiredError extends Error {
 
 // A sim was stopped. `capped` is true when the page stopped it for running past its time limit, not the viewer.
 export class CancelledError extends Error {
-  constructor(message = 'Sim cancelled.', { capped = false } = {}) { super(message); this.name = 'CancelledError'; this.capped = capped; }
+  constructor({ capped = false } = {}) { super('Sim cancelled.'); this.name = 'CancelledError'; this.capped = capped; }
 }
 
 const ISSUES = 'https://github.com/dogshep/warrior-dps-analyzer/issues/new';

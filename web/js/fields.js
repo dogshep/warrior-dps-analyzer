@@ -10,6 +10,8 @@ export const HAND_TWO = 4;          // ITEM.HAND value for a two-hander
 export const SRC = { WHERE: 0, FACTION: 1, PHASE: 2, KINDS: 3, OPENS: 4 };
 // The letter in SRC.KINDS for an item a profession makes.
 export const KIND_CRAFTED = 'c';
+// Whether an upgrades.json item row is a crafted one.
+export const isCrafted = meta => String(meta?.[SRC.KINDS] || '').includes(KIND_CRAFTED);
 
 // prices.json houses[key].items[id] = [min, median, listed] and, for crafted items, [.., materials cost, unpriced count]
 export const PRICE = { MIN: 0, MEDIAN: 1, LISTED: 2, MATERIALS: 3, UNPRICED: 4 };

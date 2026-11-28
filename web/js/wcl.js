@@ -53,22 +53,20 @@ export function token() {
   return session.get('wcl_token');
 }
 
-export function signOut() {
+function signOut() {
   session.del('wcl_token');
   session.del('wcl_token_expires');
 }
 
 // Sends the viewer to Warcraft Logs to sign in. `pending` (the pasted link) comes back after the redirect.
 export async function signIn(pending) {
-  const id = WCL_CLIENT_ID;
-  if (!id) throw new Error('This page has no Warcraft Logs client id yet.');
   const verifier = crypto.randomUUID() + crypto.randomUUID();
   const state = crypto.randomUUID();
   session.set('wcl_verifier', verifier);
   session.set('wcl_state', state);
   if (pending) session.set('wcl_pending', pending); else session.del('wcl_pending');
   const params = new URLSearchParams({
-    client_id: id, response_type: 'code', redirect_uri: redirectUri(), state,
+    client_id: WCL_CLIENT_ID, response_type: 'code', redirect_uri: redirectUri(), state,
     code_challenge: await challenge(verifier), code_challenge_method: 'S256',
   });
   location.href = `${AUTHORIZE}?${params}`;
@@ -255,7 +253,7 @@ async function fetchFight(report, warrior, fight, fetchImpl) {
       auras: (first.auras || []).map(a => a.ability),
     });
   }
-  return { players: new Map([[guid, p]]), names, combatants, targetHp, debuffs, source: 'wcl' };
+  return { players: new Map([[guid, p]]), names, combatants, targetHp, debuffs };
 }
 
 function auraEv(type) {

@@ -81,7 +81,7 @@ export function warm(n = THREADS, onDownload) {
 export function cancel() {
   for (const { w } of workers) w.terminate();
   workers.length = 0;
-  for (const p of pending.values()) { p.reject(new CancelledError()); }
+  for (const p of pending.values()) p.reject(new CancelledError());
   pending.clear();
 }
 

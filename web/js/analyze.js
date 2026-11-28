@@ -8,16 +8,16 @@ import { PULL_GAP_MS } from './logparser.js';
 import { ITEM, ITEM_TYPE_WEAPON, HAND_TWO } from './fields.js';
 
 // Log inventory slots 1..19 (0-based here) in the order wowsims' EquipmentSpec wants them.
-const LOG_TO_SIM_SLOTS = [0, 1, 2, 14, 4, 8, 9, 5, 6, 7, 10, 11, 12, 13, 15, 16, 17];
-const SLOT_NAMES = ['Head', 'Neck', 'Shoulder', 'Back', 'Chest', 'Wrist', 'Hands', 'Waist', 'Legs', 'Feet', 'Ring 1', 'Ring 2', 'Trinket 1', 'Trinket 2', 'Main hand', 'Off hand', 'Ranged'];
-// Item type of each sim slot (1 head ... 13 weapon), for slot-specific enchant names.
-const SLOT_ITEM_TYPE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 14];
+export const LOG_TO_SIM_SLOTS = [0, 1, 2, 14, 4, 8, 9, 5, 6, 7, 10, 11, 12, 13, 15, 16, 17];
+export const SLOT_NAMES = ['Head', 'Neck', 'Shoulder', 'Back', 'Chest', 'Wrist', 'Hands', 'Waist', 'Legs', 'Feet', 'Ring 1', 'Ring 2', 'Trinket 1', 'Trinket 2', 'Main hand', 'Off hand', 'Ranged'];
+// Item type of each sim slot (1 head ... 13 weapon, 14 ranged), for slot-specific enchant names.
+export const SLOT_ITEM_TYPE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 14];
+const ARCANUMS = [[2543, 'Arcanum of Rapidity (+1% haste)'], [1506, 'Lesser Arcanum, +8 Strength'], [1508, 'Lesser Arcanum, +8 Agility']];
+const WEAPON = [[1900, 'Crusader']];
 // The DPS warrior enchants per sim slot, best first, from the wowsims Forever enchant list. Any enchant not
 // listed, or no enchant, is flagged. Two-hand weapons also accept the +25 Agility and +25 Strength enchants.
 // Enchants WoW Forever does not have yet stay listed but are never suggested (see inForever), so they come back by
 // themselves once data/forever-availability.json releases them.
-const ARCANUMS = [[2543, 'Arcanum of Rapidity (+1% haste)'], [1506, 'Lesser Arcanum, +8 Strength'], [1508, 'Lesser Arcanum, +8 Agility']];
-const WEAPON = [[1900, 'Crusader']];
 const BEST_ENCHANTS = {
   0: ARCANUMS,
   2: [[2717, 'Might of the Scourge'], [2606, 'Zandalar Signet of Might']],
@@ -41,6 +41,9 @@ export function safeNames(names) {
   return out;
 }
 
+// The enchant's name without the "Enchant Chest - " prefix.
+export const shortEnchantName = (names, effectId, simSlot) => enchantName(names, effectId, simSlot).replace(/^Enchant [\w\s-]+? - /, '');
+
 export function enchantName(names, effectId, simSlot) {
   const byType = names.enchants[effectId];
   if (!byType) return effectId ? `#${effectId}` : '';
@@ -48,11 +51,12 @@ export function enchantName(names, effectId, simSlot) {
   return byType[SLOT_ITEM_TYPE[simSlot]] || Object.values(byType)[0];
 }
 
-// An enchant that can be had in Forever now on that slot's item type. names.json marks the rest phase 2: wowsims'
-// Unknown ones (the Zul'Gurub and Naxxramas shoulder enchants), Forever's PTR-only enchant scrolls (Living Stats,
-// Grand Crusader, +5 Agility on cloaks, +15 Strength on gloves) and anything data/forever-availability.json holds back.
+// Whether an enchant can be had in Forever now on that slot's item type. names.json gives phase 2 to the ones that
+// can't: wowsims' Unknown ones (the Zul'Gurub and Naxxramas shoulder enchants), Forever's PTR-only enchant scrolls
+// (Living Stats, Grand Crusader, +5 Agility on cloaks, +15 Strength on gloves) and anything
+// data/forever-availability.json holds back.
 // Older builds of names.json have one phase per effect id, or none.
-export const inForever = (names, id, simSlot) => {
+const inForever = (names, id, simSlot) => {
   const ph = names.enchantPhase?.[id];
   if (ph == null) return true;
   if (typeof ph === 'number') return ph === 1;
@@ -75,7 +79,7 @@ export function auditEnchants(gear, names) {
     let list = best;
     if (slot === 14 && info && info[ITEM.HAND] === HAND_TWO) list = [...best, ...TWO_HAND_EXTRA.filter(([id]) => inForever(names, id, slot))];
     const ok = list.some(([id]) => id === it.enchant) || all.some(([id]) => id === it.enchant);
-    out.push({ slot, label: SLOT_LABEL[slot], have: it.enchant, haveName: it.enchant ? enchantName(names, it.enchant, slot).replace(/^Enchant [\w\s-]+? - /, '') : '', ok, best: list.map(([, n]) => n) });
+    out.push({ slot, label: SLOT_LABEL[slot], have: it.enchant, haveName: it.enchant ? shortEnchantName(names, it.enchant, slot) : '', ok, best: list.map(([, n]) => n) });
   }
   return out;
 }
@@ -403,7 +407,7 @@ export function suggestions(a, sim, ideal, castable) {
     for (const mine of a.abilities) {
       const sc = simCasts.get(mine.name) ?? 0;
       if (UTILITY.has(mine.name) || mine.damage <= 0 || !mine.castEvents) continue;
-      if (mine.casts - sc > Math.max(3, sc * 0.5) && sc < 1 && mine.casts > 3) {
+      if (sc < 1 && mine.casts > 3) {
         out.push({ kind: 'rotation', title: `The sim never uses ${mine.name} (you cast it ${mine.casts} times)`, detail: 'Those global cooldowns and rage are better spent on your main attacks.', gain: null });
       }
     }
@@ -453,4 +457,3 @@ export function missingConsumes(found) {
   return [13452, 12451, 12460, 20452, 13442].filter(id => !have.has(id)).map(id => CONSUME_LABELS[id]);
 }
 
-export { SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS };
