@@ -8,6 +8,7 @@ import { DEFAULT_ITERATIONS, MIN_ITERATIONS, MAX_ITERATIONS } from './sim-config
 import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
 import { loadPrices, priceFor, materialsList, houseKey, gold, age } from './prices.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS } from './analyze.js';
+import { ITEM, ITEM_TYPE_WEAPON, SRC, KIND_CRAFTED } from './fields.js';
 
 $('hsRage').textContent = HS_EXECUTE_RAGE;
 const PRESETS = ['fury', 'fury_2h', 'arms'];
@@ -335,7 +336,7 @@ async function findUpgrades() {
     // The character sheet for the current gear and each swap (milliseconds each, no sim): hit and set bonuses.
     bar('Checking hit and set bonuses…', 0);
     const ohInfo = names.items[gear[15]?.id];
-    const dualWield = !!ohInfo && ohInfo[1] === 13;
+    const dualWield = !!ohInfo && ohInfo[ITEM.TYPE] === ITEM_TYPE_WEAPON;
     const sheetNow = await pool.stats(probe);
     const missNow = yellowMiss(sheetNow.remainingHit ?? 0, dualWield);
     const checked = [], underCap = [];
@@ -420,7 +421,7 @@ function underCapLine(underCap, names) {
   for (const c of underCap.sort((x, y) => (y.est ?? 0) - (x.est ?? 0))) {
     if (seen.has(c.slot)) continue;
     seen.add(c.slot);
-    list.push(`${SLOT_NAMES[c.slot]}: ${names.items[c.id]?.[0] || `#${c.id}`} (${c.miss.toFixed(1)}% under)`);
+    list.push(`${SLOT_NAMES[c.slot]}: ${names.items[c.id]?.[ITEM.NAME] || `#${c.id}`} (${c.miss.toFixed(1)}% under)`);
   }
   return list.length ? `<p class="hint">Left out because they would put you under the hit cap for special attacks: ${esc(list.join('; '))}.</p>` : '';
 }
@@ -443,7 +444,7 @@ let lastUpgrades = null;
 
 // Price line for a crafted upgrade, from the chosen auction house.
 function priceLine(prices, key, id) {
-  if (!String(upgradeTable.items[id]?.[3] || '').includes('c')) return '';
+  if (!String(upgradeTable.items[id]?.[SRC.KINDS] || '').includes(KIND_CRAFTED)) return '';
   const p = priceFor(prices, key, id);
   if (p === undefined) return '';
   if (p === null) return '<div class="src">Not on the auction house right now</div>';
@@ -460,10 +461,10 @@ function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap 
   const MARKET_NAMES = { normal: 'Normal', pvp: 'PvP', rp: 'RP', rppvp: 'RP PvP' };
   const key = houseKey($('ahRegion').value, $('ahMarket').value, faction);
   const house = prices?.houses?.[key];
-  const crafted = rows.some(r => String(upgradeTable.items[r.id]?.[3] || '').includes('c'));
+  const crafted = rows.some(r => String(upgradeTable.items[r.id]?.[SRC.KINDS] || '').includes(KIND_CRAFTED));
   const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
-  const tags = id => [...(upgradeTable.items[id]?.[3] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
-  const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[0] || `#${id}`)}</a>`;
+  const tags = id => [...(upgradeTable.items[id]?.[SRC.KINDS] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
+  const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[ITEM.NAME] || `#${id}`)}</a>`;
   const found = new Set(rows.map(r => r.slot));
   const none = [...new Set(cands.map(c => c.slot))].filter(s => !found.has(s)).map(s => SLOT_NAMES[s]);
   $('upgOut').innerHTML = (rows.length
@@ -472,7 +473,7 @@ function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap 
         const cost = setCost.get(r.slot);
         const sets = (r.sets?.lost || []).map(x => `<div class="warn small">Breaks ${esc(x)}${cost ? `, worth about ${fmt(Math.max(0, cost.dps))} DPS (±${fmt(1.96 * cost.err)}). The gain already counts that loss.` : '. The gain already counts that loss.'}</div>`).join('') +
           (r.sets?.gained || []).map(x => `<div class="src">Completes ${esc(x)}</div>`).join('');
-        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[0] || `#${cur}`)}</div>` : ''}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[0] || '')}${priceLine(prices, key, r.id)}</td></tr>`;
+        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[ITEM.NAME] || `#${cur}`)}</div>` : ''}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[0] || '')}${priceLine(prices, key, r.id)}</td></tr>`;
       }).join('') + '</table>'
     : '<p>None of the likely upgrades beat your current gear in the sim.</p>') +
     (none.length ? `<p class="hint">Simmed but not an upgrade in your gear: ${esc(none.join(', '))}.</p>` : '') +

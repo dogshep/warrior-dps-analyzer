@@ -1,5 +1,7 @@
 // Approximate auction house prices for crafted upgrades. .github/workflows/ah-prices.yml publishes prices.json
 // (from Blizzard's API, see scripts/ah-prices.mjs) to the ah-prices branch every 3 hours.
+import { PRICE } from './fields.js';
+
 const PRICES_URL = 'https://raw.githubusercontent.com/dogshep/warrior-dps-analyzer/ah-prices/prices.json';
 
 // Copper -> "123g 46s" (copper only shown under 1 gold).
@@ -22,8 +24,8 @@ export function priceFor(prices, key, id) {
   if (!h) return undefined;
   const p = h.items?.[id];
   if (!p) return null;
-  const out = { min: p[0], median: p[1], listed: p[2], updated: h.updated };
-  if (p.length >= 5) Object.assign(out, { materials: p[3], unpriced: p[4] });
+  const out = { min: p[PRICE.MIN], median: p[PRICE.MEDIAN], listed: p[PRICE.LISTED], updated: h.updated };
+  if (p.length > PRICE.UNPRICED) Object.assign(out, { materials: p[PRICE.MATERIALS], unpriced: p[PRICE.UNPRICED] });
   return out;
 }
 

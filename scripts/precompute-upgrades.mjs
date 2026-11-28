@@ -245,6 +245,7 @@ async function main() {
       const trusted = scored.filter(y => slot < 14 || y.simmed);
       for (const k of KINDS) for (const side of [1, 2]) for (const later of [false, true]) {
         for (const x of ofKind(trusted, k, side).filter(y => !!opens.get(y.it.id) === later).slice(0, KEEP_TOP)) {
+          // Order as in web/js/fields.js SRC.
           const meta = [sourceText(db, x.it), factionOf(x.it), x.it.phase || 1, kinds.get(x.it.id)];
           if (opens.get(x.it.id)) meta.push(opens.get(x.it.id));
           out.items[x.it.id] ??= meta;
