@@ -166,7 +166,7 @@ local function build()
 
   y = header(win, "Look", y - 4)
   y = slider(win, "Text size", PAD, y, 10, 40, 1, function() return db.fontSize end,
-    function(v) db.fontSize = v; WT.ApplyStyle(); WT.ShowSample("color") end)
+    function(v) db.fontSize = v; WT.ApplyStyle(); WT.ShowSample() end)
   y = slider(win, "Rage cap", PAD, y, 30, 100, 5, function() return db.rageCap end,
     function(v) db.rageCap = v end)
   y = swatch(win, "Tip color", PAD, y, "color")
@@ -178,7 +178,7 @@ local function build()
     WT.SetUnlocked(not WT.IsUnlocked()); WT.RefreshOptions()
   end)
   table.insert(controls, function() move:SetText(WT.IsUnlocked() and "Lock position" or "Move tips") end)
-  button(win, "Test tip", PAD + 130, y, 120, function() WT.ShowSample("color") end)
+  button(win, "Test tip", PAD + 130, y, 120, function() WT.ShowSample() end)
   button(win, "Run probe", PAD + 260, y, 120, function() WT.ArmProbe() end)
   y = y - 34
 

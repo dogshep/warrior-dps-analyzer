@@ -13,7 +13,7 @@ local _, WT = ...
 
 local REACTIVE = { "Overpower", "Revenge" }
 local TICK = 0.25
-local BIG_COOLDOWNS = { "Death Wish", "Recklessness", "Blood Fury", "Bloodrage" }
+local BIG_COOLDOWNS = WT.BIG_COOLDOWNS
 local SHOUT_DEFAULT = 120
 
 local ticker
@@ -22,7 +22,6 @@ local shout = { expires = nil, duration = nil }   -- Battle Shout tracker
 -- Clean look at cooldowns and Battle Shout. Runs whenever values are readable:
 -- just before restrictions turn on, out of combat, and after combat.
 local function sync()
-  for _, name in ipairs(BIG_COOLDOWNS) do WT.SyncCooldown(name) end
   for name in pairs(WT.CD_BASE) do WT.SyncCooldown(name) end
   local left = WT.ShoutLeft()
   if left ~= nil then
@@ -34,7 +33,6 @@ local function sync()
     end
   end
 end
-WT.Sync = sync
 
 local function isReady(name)
   return WT.Knows(name) and WT.CooldownLeftTracked(name) == 0
@@ -304,7 +302,7 @@ WT.On("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
   end
 end)
 WT.On("SPELLS_CHANGED", function() nameById.stale = true end)
-WT.RageIndicatorWorks = function()
+function WT.RageIndicatorWorks()
   local label, curve = rageIndicator(), curveForCap(WT.db.rageCap)
   if not label or not curve then return "no curve API" end
   local ok, err = pcall(function()
