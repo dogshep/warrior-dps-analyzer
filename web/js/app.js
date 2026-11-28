@@ -3,7 +3,7 @@ import * as wcl from './wcl.js';
 import { mmss } from './cooldowns.js';
 import * as pool from './simpool.js';
 import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
-import { loadPrices, priceFor, houseKey, gold, age } from './prices.js';
+import { loadPrices, priceFor, materialsList, houseKey, gold, age } from './prices.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
@@ -433,7 +433,13 @@ function priceLine(prices, key, id) {
   const p = priceFor(prices, key, id);
   if (p === undefined) return '';
   if (p === null) return '<div class="src">Not on the auction house right now</div>';
-  return `<div class="price">AH from ${gold(p.min)}${p.listed > 1 ? ` <span class="src">(${p.listed} listed, median ${gold(p.median)})</span>` : ''}</div>`;
+  const ah = p.listed
+    ? `<div class="price">AH from ${gold(p.min)}${p.listed > 1 ? ` <span class="src">(${p.listed} listed, median ${gold(p.median)})</span>` : ''}</div>`
+    : '<div class="src">Not on the auction house right now</div>';
+  if (p.materials === undefined) return ah;
+  const list = materialsList(prices, id);
+  const missing = p.unpriced ? ` <span class="src">+ ${p.unpriced} not on the AH</span>` : '';
+  return ah + `<div class="price" title="${esc(list ? `Materials: ${list}` : '')}">Materials ${p.unpriced ? 'at least' : 'about'} ${gold(p.materials)}${missing}</div>`;
 }
 
 function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap = [], prices = null, faction) {
@@ -458,7 +464,7 @@ function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap 
     (none.length ? `<p class="hint">Simmed but not an upgrade in your gear: ${esc(none.join(', '))}.</p>` : '') +
     underCapLine(underCap, names) +
     (crafted ? `<p class="hint">${house
-      ? `Crafted item prices: lowest buyout on the ${$('ahRegion').value.toUpperCase()} ${MARKET_NAMES[$('ahMarket').value]} ${faction === 0 ? 'Horde' : 'Alliance'} auction house, from Blizzard's auction data, updated ${age(house.updated)}. Prices move; check in game.`
+      ? `Crafted item prices: lowest buyout on the ${$('ahRegion').value.toUpperCase()} ${MARKET_NAMES[$('ahMarket').value]} ${faction === 0 ? 'Horde' : 'Alliance'} auction house, from Blizzard's auction data, updated ${age(house.updated)}. Materials: what one craft's reagents cost from the cheapest listings there (hover for the list). Prices move; check in game.`
       : prices ? 'No auction house prices for this realm type yet.' : 'Auction house prices could not be loaded.'}</p>` : '');
 }
 

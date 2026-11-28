@@ -62,7 +62,10 @@ auction house the viewer picks (US or EU, realm type, their log's faction). `.gi
 (`/data/wow/ruleset/{ruleset}/auctions/{house}`, namespace `dynamic-forever-{region}`; not documented by Blizzard
 yet), keeps only the crafted items in the live `upgrades.json`, and force-pushes a small `prices.json` to the
 `ah-prices` branch, which the page reads from raw.githubusercontent.com. The page says when Blizzard's data was
-last updated beside the price choices. Needs the repo secrets `BNET_CLIENT_ID` and `BNET_CLIENT_SECRET` (a free
+last updated beside the price choices. Each crafted upgrade also shows what its materials cost: the recipe
+comes from Blizzard's profession and recipe data (`static-forever` namespace), and each reagent is priced by
+buying the amount one craft needs from the cheapest listings on that house's commodities list. Hovering the
+materials line lists the reagents. Reagents with too few listed are counted separately, not guessed. Needs the repo secrets `BNET_CLIENT_ID` and `BNET_CLIENT_SECRET` (a free
 client from develop.battle.net). Prices are Blizzard's data, credited on the page.
 
 ## Recording a good log
