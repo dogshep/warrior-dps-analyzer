@@ -26,7 +26,8 @@ Simming every item for every player would take far too long, so the work is spli
 
 - **At build time** (`scripts/precompute-upgrades.mjs`, about 14 minutes on 4 cores, cached in CI by wowsims commit):
   for each rotation it sims stat weights in the wowsims pre-raid gear, prices every level 60 rare or better item a
-  warrior can use and can get in Forever now (wowsims' phase 1: no drops from raids Forever hasn't opened) with them, and sims the ones weights can't price (weapons, procs, on-use effects) swapped into
+  warrior can use and can get in Forever now (wowsims' phase 1, less what `data/forever-availability.json` holds back)
+  with them, and sims the ones weights can't price (weapons, procs, on-use effects) swapped into
   that gear. The result, with each item's sources from the wowsims item database, is `web/sim/upgrades.json`.
 - **In the browser** the page takes the best one or two of those per slot that beat what the player wears (8, 16
   or 24 in all) from the sources ticked (dungeons, raids, crafted, quests, vendors, reputation, PvP), sims each one
@@ -36,8 +37,17 @@ Simming every item for every player would take far too long, so the work is spli
   is left out and listed as such. A swap that breaks a set bonus is flagged, with what the bonus is worth: one extra
   sim of the gear without that item, its stats added back, against the current gear.
 - **Enchants** are only suggested when they are in Forever: not the ones wowsims marks unavailable (such as the
-  Zul'Gurub and Naxxramas shoulder enchants), and not Living Stats or Grand Crusader, which wowsims lists but Forever
-  does not have yet.
+  Zul'Gurub and Naxxramas shoulder enchants), and not Forever's own enchant scrolls that Wowhead lists as PTR only
+  (Living Stats, Grand Crusader, +5 Agility on cloaks, +15 Strength on gloves).
+
+### What counts as "in Forever"
+
+wowsims/forever flags every item and enchant as obtainable now or not yet, but a few of its calls don't match the
+live game. [`data/forever-availability.json`](data/forever-availability.json) is the one hand-kept list that
+corrects them, with the reason and source for each entry. The build (`scripts/make_names.py` for enchants,
+`scripts/precompute-upgrades.mjs` via `scripts/availability.mjs` for gear) reads it; the page never needs editing.
+Dated entries release themselves: raid loot, Head of Onyxia rewards, Onyxia scale crafts and The Watchers'
+(Barrow Deeps) reputation rings show up from 9 December 2026, when Forever opens its raids, without a rebuild.
 
 Two sims of different gear don't share their dice rolls, so a gain from 100 fights is only good to about ±13 DPS.
 The page picks the fight count (200 to 1,000) so the run takes about a minute, runs sims side by side on spare

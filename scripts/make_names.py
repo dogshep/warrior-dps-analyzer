@@ -1,8 +1,13 @@
 """Writes the slim lookup tables the page uses from wowsims' db.json: item names and slots, enchant names and phases,
-spell names, and which aura (buff) ids belong to which consumable."""
-import json, sys
+spell names, and which aura (buff) ids belong to which consumable.
+Enchants WoW Forever does not have yet (data/forever-availability.json) get phase 2, like wowsims' Unknown ones."""
+import json, os, sys
 
 db = json.load(open(sys.argv[1]))
+avail = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "forever-availability.json")))
+ptr = avail["ptrOnlyEnchantItems"]
+ptr_items = set(ptr["ids"]) | {i for lo, hi in ptr["ranges"] for i in range(lo, hi + 1)}
+held_enchants = {int(k) for k in avail["enchantsNotInForever"] if not k.startswith("_")}
 out = {"items": {}, "enchants": {}, "enchantPhase": {}, "enchantStats": {}, "setItems": {}, "spells": {}, "consumes": {}, "imbues": {}}
 sparse = lambda arr: {i: v for i, v in enumerate(arr or []) if v}
 for it in db.get("items", []):
@@ -17,13 +22,20 @@ for e in db.get("enchants", []):
     # so names are keyed by effect id, then by item type (1 head ... 13 weapon).
     for t in [e.get("type", 0)] + e.get("extraTypes", []):
         out["enchants"].setdefault(e["effectId"], {})[t] = e.get("name", "")
-    # 1 = can be had in Forever now, 2 = not yet (wowsims' ContentPhaseUnknown). Phase 1 if any entry is.
     st = sparse(e.get("stats"))
     if st:
         for t in [e.get("type", 0)] + e.get("extraTypes", []):
             out["enchantStats"].setdefault(e["effectId"], {})[t] = st
+    # Per effect id and item type: 1 = can be had in Forever now, 2 = not yet (wowsims' ContentPhaseUnknown, a
+    # PTR-only scroll, or held back by hand). Per type because one effect id can be in Forever on one slot only
+    # (+15 Strength is a weapon enchant from the Thorium Brotherhood, but on gloves only a PTR scroll).
+    # Phase 1 if any entry for that slot is.
     ph = e.get("phase", 1)
-    out["enchantPhase"][e["effectId"]] = min(ph, out["enchantPhase"].get(e["effectId"], ph))
+    if e.get("itemId") in ptr_items or e["effectId"] in held_enchants:
+        ph = 2
+    for t in [e.get("type", 0)] + e.get("extraTypes", []):
+        by = out["enchantPhase"].setdefault(e["effectId"], {})
+        by[t] = min(ph, by.get(t, ph))
 for s in db.get("spellIcons", []):
     name = s.get("name", "")
     if s.get("rank"):

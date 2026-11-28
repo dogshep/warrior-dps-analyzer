@@ -8,12 +8,14 @@ const SLOT_NAMES = ['Head', 'Neck', 'Shoulder', 'Back', 'Chest', 'Wrist', 'Hands
 const SLOT_ITEM_TYPE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 14];
 // The DPS warrior enchants per sim slot, best first, from the wowsims Forever enchant list. Any enchant not
 // listed, or no enchant, is flagged. Two-hand weapons also accept the +25 Agility and +25 Strength enchants.
+// Enchants WoW Forever does not have yet stay listed but are never suggested (see inForever), so they come back by
+// themselves once data/forever-availability.json releases them.
 const ARCANUMS = [[2543, 'Arcanum of Rapidity (+1% haste)'], [1506, 'Lesser Arcanum, +8 Strength'], [1508, 'Lesser Arcanum, +8 Agility']];
 const WEAPON = [[1900, 'Crusader']];
 export const BEST_ENCHANTS = {
   0: ARCANUMS,
   2: [[2717, 'Might of the Scourge'], [2606, 'Zandalar Signet of Might']],
-  3: [[7667, 'Agility (+5)']],
+  3: [[7667, 'Agility (+5)'], [849, 'Lesser Agility (+3)']],
   4: [[1891, 'Greater Stats (+4 all stats)']],
   5: [[7656, 'Superior Agility (+9)'], [1885, 'Superior Strength (+9)']],
   6: [[2564, 'Superior Agility (+15)'], [2563, 'Superior Strength (+15)']],
@@ -40,11 +42,16 @@ export function enchantName(names, effectId, simSlot) {
   return byType[SLOT_ITEM_TYPE[simSlot]] || Object.values(byType)[0];
 }
 
-// Enchants the wowsims data lists as available that WoW Forever does not have yet (Shep, 2026-11-28).
-const NOT_IN_FOREVER = new Set([7645 /* Living Stats */, 7940 /* Grand Crusader */]);
-// An enchant that can be had in Forever now: not on the list above, and not one wowsims marks Unknown (phase 2,
-// such as the shoulder enchants from Zul'Gurub and Naxxramas). Older builds of names.json have no phases.
-const inForever = (names, id) => !NOT_IN_FOREVER.has(id) && (names.enchantPhase?.[id] ?? 1) === 1;
+// An enchant that can be had in Forever now on that slot's item type. names.json marks the rest phase 2: wowsims'
+// Unknown ones (the Zul'Gurub and Naxxramas shoulder enchants), Forever's PTR-only enchant scrolls (Living Stats,
+// Grand Crusader, +5 Agility on cloaks, +15 Strength on gloves) and anything data/forever-availability.json holds back.
+// Older builds of names.json have one phase per effect id, or none.
+export const inForever = (names, id, simSlot) => {
+  const ph = names.enchantPhase?.[id];
+  if (ph == null) return true;
+  if (typeof ph === 'number') return ph === 1;
+  return (ph[SLOT_ITEM_TYPE[simSlot]] ?? Math.min(...Object.values(ph))) === 1;
+};
 
 // Per enchantable slot: {slot, label, have, haveName, ok, best: [names]}. Shields and off-hand non-weapons are
 // skipped, and so is a slot with no enchant for it in Forever yet. An enchant that is not in Forever is never
@@ -53,14 +60,14 @@ export function auditEnchants(gear, names) {
   const out = [];
   for (const [slotStr, all] of Object.entries(BEST_ENCHANTS)) {
     const slot = Number(slotStr);
-    const best = all.filter(([id]) => inForever(names, id));
+    const best = all.filter(([id]) => inForever(names, id, slot));
     if (!best.length) continue;
     const it = gear[LOG_TO_SIM_SLOTS[slot]];
     if (!it || !it.id) continue;
     const info = names.items[it.id];
     if (slot === 15 && info && info[1] !== 13) continue;
     let list = best;
-    if (slot === 14 && info && info[4] === 4) list = [...best, ...TWO_HAND_EXTRA.filter(([id]) => inForever(names, id))];
+    if (slot === 14 && info && info[4] === 4) list = [...best, ...TWO_HAND_EXTRA.filter(([id]) => inForever(names, id, slot))];
     const ok = list.some(([id]) => id === it.enchant) || all.some(([id]) => id === it.enchant);
     out.push({ slot, label: SLOT_LABEL[slot], have: it.enchant, haveName: it.enchant ? enchantName(names, it.enchant, slot).replace(/^Enchant [\w\s-]+? - /, '') : '', ok, best: list.map(([, n]) => n) });
   }
@@ -73,10 +80,16 @@ export const DEFAULT_TALENTS = {
   arms: '30303213132215201-55050000002-2',
 };
 
+// wowsims' DefaultConsumables for Fury (ui/specs/warrior/dps/presets.ts). Every one is on Wowhead's Forever database
+// and none is PTR only. Smoked Desert Dumplings are learned from a Cenarion Hold quest in Silithus ("Desert Recipe"),
+// the one source here not yet confirmed live in Forever.
 export const DEFAULT_CONSUMES = {
   resourcePotId: 13442, foodId: 20452, explosiveId: 260814, mhImbueId: 12643, ohImbueId: 12404,
   elixirIds: [13452], extraIds: [10646, 12451, 12460, 5206, 8410],
 };
+// The two-hander rotations: wowsims' ArmsConsumables, a sharpening stone on the one weapon and no off hand.
+const TWO_HAND_CONSUMES = { ...DEFAULT_CONSUMES, mhImbueId: 12404, ohImbueId: 0 };
+export const consumesFor = preset => (preset === 'fury' ? DEFAULT_CONSUMES : TWO_HAND_CONSUMES);
 const CONSUME_LABELS = { 13452: 'Elixir of the Mongoose', 12451: 'Juju Power', 12460: 'Juju Might', 20452: 'Smoked Desert Dumplings', 8410: 'R.O.I.D.S.', 13442: 'Mighty Rage Potion' };
 
 export const DEFAULT_TARGET = { level: 63, stats: Array.from({ length: 39 }, (_, i) => (i === 14 ? 320 : i === 27 ? 3731 : 0)), minBaseDamage: 2601, damageSpread: 0.5, swingSpeed: 2, parryHaste: true, canCrush: true };
@@ -251,7 +264,7 @@ export function buildRequest(a, parser, names, apls, opts = {}) {
   for (const d of parser.debuffs || []) if (d.dst === a.mainTarget && inFight(a.fight, d.t)) for (const [re, fn] of DEBUFF_RULES) if (re.test(d.name)) fn(debuffs);
 
   const consumes = detectConsumes(a, parser, names);
-  const useConsumes = opts.consumes === 'ideal' ? DEFAULT_CONSUMES : consumes.spec;
+  const useConsumes = opts.consumes === 'ideal' ? consumesFor(a.preset) : consumes.spec;
 
   const duration = Math.max(20, Math.round(a.simDur || a.dur));
   const player = {

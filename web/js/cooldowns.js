@@ -2,7 +2,7 @@
 // Boss fights get a per-fight plan (missed uses, holding the last use for execute, stacking burst).
 // Dungeon runs get a per-pull view, because how fast the group pulls decides whether a cooldown is back.
 
-// cd and dur in seconds. `value` is the rough share of your damage the cooldown adds while it is up.
+// cd and dur in seconds, as in wowsims/forever's spell data (Sweeping Strikes lasts 20s there, 5 charges). `value` is the rough share of your damage the cooldown adds while it is up.
 // `always`: every warrior has it, so it counts even when never pressed. Others count only once seen in the log
 // (talents, racials and potions the log cannot otherwise confirm).
 export const COOLDOWNS = [
@@ -11,7 +11,7 @@ export const COOLDOWNS = [
   { name: 'Blood Fury', cd: 120, dur: 15, value: 0.08, burst: true },
   { name: 'Berserking', cd: 180, dur: 10, value: 0.12, burst: true },
   { name: 'Mighty Rage Potion', aura: 'Mighty Rage', cd: 120, dur: 20, value: 0.06, burst: true },
-  { name: 'Sweeping Strikes', cd: 30, dur: 10, value: 0.15, minPull: 10, multi: true },
+  { name: 'Sweeping Strikes', cd: 30, dur: 20, value: 0.15, minPull: 10, multi: true },
   { name: 'Bloodrage', cd: 60, dur: 10, value: 0.02, always: true, minPull: 0 },
 ];
 
