@@ -5,6 +5,7 @@ name: Tests
 # need the built sim (tests/run_analysis.mjs) still run in the deploy workflow.
 on:
   pull_request:
+  workflow_dispatch: # sim-bump.yml starts it on the bump branch (a PR opened with the built-in token starts nothing by itself)
   push:
     branches-ignore: [main]
 

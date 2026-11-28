@@ -120,8 +120,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: worker/package-lock.json
       - name: Test the Worker
         run: node tests/worker_test.mjs
       - name: Deploy the Warcraft Logs Worker
@@ -180,6 +178,15 @@ jobs:
         with:
           name: sim
           path: web/sim
+      # Everything in web/sim comes out of the build that ran wowsims code. Publish only the file types the page
+      # loads: a stray .js or .html there would run on the shared dogshep.github.io origin.
+      - name: Check the built sim folder holds only what the page loads
+        run: |
+          bad=$(find web/sim -mindepth 1 \( -type l -o -type d \) -not -path 'web/sim/apls' -not -path 'web/sim/gear_sets' -print \
+            -o -type f -not \( -path web/sim/lib.wasm.gz -o -path web/sim/wasm_exec.js -o -path web/sim/names.json \
+               -o -path web/sim/version.json -o -path web/sim/upgrades.json -o -path 'web/sim/apls/*.json' -o -path 'web/sim/gear_sets/*.json' \) -print)
+          if [ -n "$bad" ]; then echo "::error::Unexpected files in the built sim folder:"; echo "$bad"; exit 1; fi
+          for f in lib.wasm.gz wasm_exec.js names.json version.json upgrades.json; do [ -f "web/sim/$f" ] || { echo "::error::web/sim/$f is missing"; exit 1; }; done
       - name: Point the page at the Worker
         env:
           URL: ${{ needs.deploy-worker.outputs.url }}

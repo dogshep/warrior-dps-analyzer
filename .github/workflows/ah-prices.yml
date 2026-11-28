@@ -26,6 +26,8 @@ jobs:
       contents: write # pushes the ah-prices branch
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # the write token is added only for the final push
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -45,6 +47,8 @@ jobs:
           fi
           node scripts/ah-prices.mjs "$RUNNER_TEMP/upgrades.json" "$RUNNER_TEMP/names.json" "$RUNNER_TEMP/prices.json"
       - name: Publish to the ah-prices branch
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           cp "$RUNNER_TEMP/prices.json" prices.json
           git config user.name 'github-actions[bot]'
@@ -53,4 +57,4 @@ jobs:
           git rm -rq --cached .
           git add prices.json
           git commit -qm "Auction house prices $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -f origin HEAD:refs/heads/ah-prices
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/ah-prices
