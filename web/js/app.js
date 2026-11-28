@@ -9,7 +9,7 @@ import { tidyTips } from './tips-ui.js';
 import { cooldownsHtml, executeView, statsHtml, tipsHtml, tablesHtml } from './render.js';
 import { initUpgrades } from './upgrades-ui.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames } from './analyze.js';
-import { AuthRequiredError, CancelledError } from './errors.js';
+import { AuthRequiredError, CancelledError, reportUrl } from './errors.js';
 
 $('hsRage').textContent = HS_EXECUTE_RAGE;
 // Every "How this works" link opens the fold in the footer.
@@ -49,7 +49,11 @@ let fights = [];
 
 // Shows a message in a status element: kind 'warn' (red) or 'hint' (plain). Used instead of alert().
 function showStatus(el, msg, kind = 'warn') {
-  el.innerHTML = `<span class="${kind}">${esc(msg)}</span>`;
+  el.innerHTML = `<span class="${kind}">${esc(msg)}</span>${kind === 'warn' ? reportLink(msg) : ''}`;
+}
+// A "Report this" link that opens a bug report with the error, build and browser filled in.
+function reportLink(msg) {
+  return ` <a href="${esc(reportUrl(msg))}" target="_blank" rel="noopener">Report this</a>`;
 }
 
 async function load(file) {
@@ -65,6 +69,7 @@ async function load(file) {
     showStatus($('loadStatus'), `Could not read this file: ${e.message || e}`);
     return;
   }
+  $('progress').hidden = true;
   const war = parser.warriors();
   if (!war.length) { showStatus($('loadStatus'), 'No warriors found in this log.'); return; }
   $('who').innerHTML = war.map(w => `<option value="${esc(w.guid)}">${esc(w.name)}${w.hasGear ? '' : ' (no gear in log)'}</option>`).join('');
@@ -151,7 +156,7 @@ async function analyze() {
     renderTips(suggestions(a, null, null));
     $('simnote').innerHTML = e instanceof CancelledError
       ? 'Sim cancelled. These tips come from the log alone.'
-      : `<span class="warn">The sim failed: ${esc(e.message)}</span>. These tips come from the log alone.`;
+      : `<span class="warn">The sim failed: ${esc(e.message)}</span>${reportLink(`The sim failed: ${e.message}`)} These tips come from the log alone.`;
   } finally {
     $('go').disabled = false;
     $('cancel').hidden = true;
@@ -213,7 +218,7 @@ async function loadWcl(link) {
 
 // A private report (or one the site can't reach) asks before sending the viewer off to sign in.
 function wclError(e, link) {
-  $('wclStatus').innerHTML = `<span class="warn">${esc(e.message || e)}</span>`;
+  $('wclStatus').innerHTML = `<span class="warn">${esc(e.message || e)}</span>${e instanceof AuthRequiredError ? '' : reportLink(e.message || e)}`;
   if (e instanceof AuthRequiredError && link) {
     const b = document.createElement('button');
     b.className = 'link';

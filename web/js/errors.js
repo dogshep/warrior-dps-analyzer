@@ -9,3 +9,13 @@ export class AuthRequiredError extends Error {
 export class CancelledError extends Error {
   constructor(message = 'Sim cancelled.', { capped = false } = {}) { super(message); this.name = 'CancelledError'; this.capped = capped; }
 }
+
+const ISSUES = 'https://github.com/dogshep/warrior-dps-analyzer/issues/new';
+
+// A link that opens a prefilled bug report: what failed, which build and sim, which browser. No log contents.
+export function reportUrl(what, doc = document, nav = navigator) {
+  const build = doc.querySelector('meta[name="build"]')?.content || 'dev';
+  const sim = doc.getElementById('simver')?.textContent || '';
+  const details = `What failed: ${String(what).slice(0, 300)}\nBuild: ${build}\nSim: ${sim}\nBrowser: ${nav.userAgent}`;
+  return `${ISSUES}?template=bug.yml&title=${encodeURIComponent('Error: ' + String(what).slice(0, 80))}&details=${encodeURIComponent(details)}`;
+}

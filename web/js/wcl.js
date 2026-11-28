@@ -140,7 +140,7 @@ async function gql(op, variables, fetchImpl = fetch) {
     if (res.status === 401) { signOut(); throw new AuthRequiredError('Your Warcraft Logs sign-in expired. Sign in again.'); }
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.data && !data.errors && (!variables?.code || data.data.reportData?.report)) { apiUrl = url; return data.data; }
-    lastErr = new Error(data.errors?.[0]?.message || `Warcraft Logs answered ${res.status}.`);
+    lastErr = new Error(res.status === 404 ? 'Warcraft Logs has no report at that link. Check the link, or it may belong to another account.' : data.errors?.[0]?.message || `Warcraft Logs answered ${res.status}.`);
   }
   throw lastErr;
 }

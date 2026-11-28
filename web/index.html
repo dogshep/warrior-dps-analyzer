@@ -7,9 +7,12 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://*.warcraftlogs.com https://*.workers.dev https://raw.githubusercontent.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Warrior DPS Analyzer</title>
+<meta name="build" content="dev">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<noscript><p class="warn">This page needs JavaScript.</p></noscript>
+<p id="oldBrowser" class="warn" hidden>This browser is too old for the sim. Use a current Chrome, Edge, Firefox or Safari on a computer.</p>
 <header>
   <h1>Warrior DPS Analyzer</h1>
   <p class="sub">For WoW Forever DPS warriors. Drop in a combat log for a short list to try next run. Nothing is uploaded.</p>
@@ -109,7 +112,9 @@
     <p><b>The sample.</b> The sample report was worked out ahead of time, so it loads at once. <button id="sampleReal" class="link">Run the sample log for real</button> or <a href="sample/sample-WoWCombatLog.txt" download>download it</a>.</p>
   </details>
   <p>Sim: <a href="https://github.com/wowsims/forever" target="_blank" rel="noopener">wowsims/forever</a> <span id="simver"></span>. Priorities follow the wowsims rotations. For the why behind each tip, see the Forever Fury guides from <a href="https://www.warcrafttavern.com/forever/guides/fury-warrior/" target="_blank" rel="noopener">Warcraft Tavern</a> and <a href="https://www.icy-veins.com/wow-forever/fury-warrior-melee-dps-pve-rotation-cooldowns-abilities" target="_blank" rel="noopener">Icy Veins</a>.</p>
+  <p><a id="report" href="https://github.com/dogshep/warrior-dps-analyzer/issues/new?template=bug.yml" target="_blank" rel="noopener">Report a bug or share feedback</a></p>
 </footer>
+<script src="js/compat.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -189,6 +189,10 @@ jobs:
           else
             echo "No Worker this run; the page keeps Warcraft Logs sign-in only."
           fi
+      - name: Give this deploy its own file URLs
+        env:
+          BUILD: ${{ github.sha }}
+        run: node scripts/stamp-build.mjs web "${BUILD:0:7}" "$(jq -r '.commit[0:7]' web/sim/version.json)"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: web
