@@ -2,7 +2,7 @@
 // worker, so an extra worker only pays the engine start (about 1 to 2 s), not another 6 MB download and compile.
 // Workers are started early (warm) so the engine is usually running before anyone presses Analyze.
 
-import { DEFAULT_ITERATIONS } from './sim-config.js';
+import { clampIterations } from './sim-config.js';
 import { CancelledError } from './errors.js';
 
 // Workers to run side by side: one per spare CPU core, up to 4 (each one holds about 110 MB).
@@ -85,10 +85,12 @@ export function cancel() {
   pending.clear();
 }
 
-// One sim on worker i. onProgress gets {stage: 'sim', done: 0..1}.
+// One sim on worker i. onProgress gets {stage: 'sim', done: 0..1}. The worker runs it in a few chunks (for the
+// progress) and sends them back; they are merged here with the other merges.
 export async function sim(request, onProgress, i = 0) {
   await warm(i + 1);
-  return call(workers[i].w, { request }, onProgress);
+  const limited = { ...request, simOptions: { ...request.simOptions, iterations: clampIterations(request.simOptions.iterations) } };
+  return mergeRuns(await call(workers[i].w, { request: limited }, onProgress));
 }
 
 // The character sheet (active set bonuses, remaining miss chance) for a request's gear, on worker i. No sim runs.
@@ -100,7 +102,7 @@ export async function stats(request, i = 0) {
 // One sim split across several workers: each runs its share of the iterations with its own seed, and the
 // parts are merged into one result. onProgress gets the average progress of the parts (0..1).
 export async function simSplit(request, onProgress, idx = [0]) {
-  const total = Math.max(1, Math.round(Number(request.simOptions.iterations)) || DEFAULT_ITERATIONS);
+  const total = clampIterations(request.simOptions.iterations);
   const parts = Math.max(1, Math.min(idx.length, total));
   const per = Math.ceil(total / parts);
   const seed = Number(request.simOptions.randomSeed || 1);

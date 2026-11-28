@@ -1,6 +1,7 @@
 // Checks the merge of sim runs split across workers (web/js/simpool.js).
 import assert from 'node:assert/strict';
 import { mergeRuns } from '../web/js/simpool.js';
+import { clampIterations, DEFAULT_ITERATIONS, MIN_ITERATIONS, MAX_ITERATIONS } from '../web/js/sim-config.js';
 
 const run = (avg, stdev, iterations, casts) => ({ iterations, raidMetrics: { parties: [{ players: [{ dps: { avg, stdev }, actions: [{ id: { spellId: 1 }, targets: [{ casts, damage: casts * 10 }] }] }] }] } });
 
@@ -23,5 +24,14 @@ const stats = a => { const mu = a.reduce((s, x) => s + x, 0) / a.length; return 
 const [mu, sd] = stats(xs), [m1, s1] = stats(xs.slice(0, 400)), [m2, s2] = stats(xs.slice(400));
 const mm = mergeRuns([run(m1, s1, 400, 0), run(m2, s2, 600, 0)]).raidMetrics.parties[0].players[0].dps;
 assert.ok(Math.abs(mm.avg - mu) < 1e-9 && Math.abs(mm.stdev - sd) < 1e-9);
+
+// Fight counts: whole numbers from the minimum to MAX_ITERATIONS, the default for anything that isn't a number.
+assert.equal(clampIterations(20), 20);
+assert.equal(clampIterations(20, MIN_ITERATIONS), MIN_ITERATIONS);
+assert.equal(clampIterations(99999), MAX_ITERATIONS);
+assert.equal(clampIterations(250.6), 251);
+assert.equal(clampIterations(undefined), DEFAULT_ITERATIONS);
+assert.equal(clampIterations('abc'), DEFAULT_ITERATIONS);
+assert.equal(clampIterations(0), DEFAULT_ITERATIONS);
 
 console.log('simpool tests passed');

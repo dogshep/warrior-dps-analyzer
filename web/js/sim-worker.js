@@ -1,6 +1,6 @@
 // Runs the wowsims Forever sim (WebAssembly) off the main thread.
 // In:  {id, module} with the compiled sim (see simpool.js): starts the engine, then answers {id, result: 'ready'}.
-//      {id, request}: runs a sim. Without a module first, the worker downloads the sim itself.
+//      {id, request}: runs a sim in chunks and answers {id, result: [one run per chunk]}. Without a module first, the worker downloads the sim itself.
 //      {id, stats: request}: the character sheet for that gear, no sim: answers {id, result: {sets, remainingHit}}.
 // Out: {id, progress: {stage: 'sim', done: 0..1}} while working, then {id, result} or {id, error}.
 importScripts('../sim/wasm_exec.js');
@@ -24,27 +24,23 @@ function load(module) {
 // Progress steps per sim. Each step is a separate sim call with about 30 ms of setup, so keep it small.
 const CHUNKS = 4;
 
-// Runs the iterations in chunks so progress can be reported, then merges them: DPS is the mean of equal-sized
-// chunks, and action metrics are concatenated (they are sums over iterations, which the page adds up by name).
+// Runs the iterations in chunks so progress can be reported, and returns each chunk's result (the page merges
+// them, see mergeRuns in simpool.js). The page has already limited the fight count (sim-config.js).
 async function run(request, report) {
-  const total = Math.min(5000, Math.max(1, Math.round(Number(request.simOptions.iterations)) || 300)); // limits as in sim-config.js
+  const total = request.simOptions.iterations;
   const chunks = total >= CHUNKS * 10 ? CHUNKS : 1;
   const per = Math.ceil(total / chunks);
-  const dps = [], actions = [];
+  const runs = [];
   for (let i = 0; i < chunks; i++) {
     const req = { ...request, simOptions: { ...request.simOptions, iterations: per, randomSeed: String(Number(request.simOptions.randomSeed || 1) + i * 7919) } };
     const out = JSON.parse(self.raidSimJson(JSON.stringify(req)));
     if (out.error && out.error.message) throw new Error(out.error.message.split('\n')[0]);
     const p = out.raidMetrics.parties[0].players[0];
-    dps.push(p.dps);
-    actions.push(...(p.actions || []));
+    runs.push({ iterations: per, raidMetrics: { parties: [{ players: [{ dps: p.dps, actions: p.actions || [] }] }] } });
     report((i + 1) / chunks);
     await new Promise(r => setTimeout(r));
   }
-  const avg = dps.reduce((s, d) => s + d.avg, 0) / dps.length;
-  // Pooled standard deviation of equal-sized chunks.
-  const varSum = dps.reduce((s, d) => s + d.stdev * d.stdev + (d.avg - avg) ** 2, 0) / dps.length;
-  return { raidMetrics: { parties: [{ players: [{ dps: { avg, stdev: Math.sqrt(varSum) }, actions }] }] }, iterations: per * chunks };
+  return runs;
 }
 
 // The set bonuses that are active and the main-hand auto attack's remaining miss chance in percent (the
