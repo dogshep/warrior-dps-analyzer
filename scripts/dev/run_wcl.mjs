@@ -1,9 +1,9 @@
 // Runs the analysis on saved Warcraft Logs API responses: {report: <report query response>, events: <fight query response>}.
-// Usage: node tests/run_wcl.mjs saved.json [iterations]
+// Usage: node scripts/dev/run_wcl.mjs saved.json [iterations]
 import { readFileSync } from 'node:fs';
-import { loadSim } from '../scripts/lib/node-sim.mjs';
-import { loadReport, loadFight } from '../web/js/wcl.js';
-import { aplSpellNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes } from '../web/js/analyze.js';
+import { loadSim } from '../lib/node-sim.mjs';
+import { loadReport, loadFight } from '../../web/js/wcl.js';
+import { aplSpellNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes } from '../../web/js/analyze.js';
 
 const [path, itArg] = process.argv.slice(2);
 const iterations = Number(itArg || 100);
@@ -20,7 +20,7 @@ const fetchImpl = async (url, opts) => {
   const ev = inner(saved.events);
   return { ok: true, status: 200, json: async () => wrap(field ? { [field]: ev[field] } : inner(saved.report)) };
 };
-const root = new URL('../web/sim/', import.meta.url);
+const root = new URL('../../web/sim/', import.meta.url);
 const names = JSON.parse(readFileSync(new URL('names.json', root)));
 const apls = Object.fromEntries(['fury', 'fury_2h', 'arms'].map(k => [k, JSON.parse(readFileSync(new URL(`apls/${k}.apl.json`, root)))]));
 
@@ -29,7 +29,6 @@ const w = report.warriors[0];
 const fight = report.fights[0];
 const parser = await loadFight(report, w, fight, fetchImpl);
 const a = analyzeFight(parser, w.guid, fight, names);
-if (process.env.CD) { for (const r of a.cooldowns) console.log("CD", r.name, "uses", r.uses.length, "possible", r.possible, "usedPulls", r.usedPulls, "spent", r.spent?.length, "unstacked", r.unstacked); }
 console.log(`${w.name} ${fight.name}: ${((fight.end - fight.start) / 1000).toFixed(0)}s total, ${a.pulls ?? 1} pulls, ${a.dur.toFixed(0)}s in combat, sim pull ${a.simDur.toFixed(0)}s x ${a.targetCount} targets, ${a.dps.toFixed(1)} dps, idle ${a.idleSec.toFixed(0)}s, rage capped ${a.rageCapped?.toFixed(2)}, preset ${a.preset}`);
 console.log('abilities:', a.abilities.slice(0, 14).map(x => `${x.name}:${x.casts}/${Math.round(x.damage)}`).join(' '));
 console.log('gear:', a.combatant?.items.map(i => `${names.items[i.id]?.[0] || i.id}${i.enchant ? '+' + i.enchant : ''}`).join(', '));

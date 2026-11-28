@@ -9,5 +9,8 @@
   "scripts": {
     "test": "node tests/run-all.mjs",
     "test:addon": "lua5.1 tests/addon/run.lua && lua5.1 tests/addon/run.lua secret"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }

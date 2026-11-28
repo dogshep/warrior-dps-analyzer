@@ -1,6 +1,7 @@
 // Writes a synthetic Classic-era combat log for a fury warrior on one boss, in the advanced logging format.
 // It plays a deliberately sloppy rotation (late Bloodthirsts, few Executes, rage capping) so the analyzer has
 // something to find. Real logs from the game are the real test; this keeps the pipeline honest offline.
+// Usage: node scripts/dev/make_fixture.mjs tests/fixture-WoWCombatLog.txt
 import { writeFileSync } from 'node:fs';
 
 let seed = 7;

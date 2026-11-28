@@ -2,7 +2,7 @@ name: Tests
 
 # Runs the unit tests and the addon test on every pull request (and on pushes to other branches), so a change is
 # checked before it is merged, including the weekly sim-bump PR. No secrets, read-only, no sim build: the tests that
-# need the built sim (tests/run_analysis.mjs) still run in the deploy workflow.
+# need the built sim (scripts/dev/run_analysis.mjs) still run in the deploy workflow.
 on:
   pull_request:
   workflow_dispatch: # sim-bump.yml starts it on the bump branch (a PR opened with the built-in token starts nothing by itself)

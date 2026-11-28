@@ -1,5 +1,5 @@
 // Loads the wowsims Forever sim (built by scripts/build-sim.sh into web/sim/) inside Node.
-// Used by scripts/precompute-upgrades.mjs (in each worker thread) and by the tests/run_*.mjs tools.
+// Used by scripts/precompute-upgrades.mjs (in each worker thread) and by the scripts/dev tools.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { gunzipSync } from 'node:zlib';
