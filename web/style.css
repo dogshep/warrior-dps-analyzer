@@ -75,3 +75,18 @@ label.chk { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; 
 .warn.small { font-size: 13px; }
 
 .price { color: var(--text); font-size: 13px; margin-top: 2px; }
+
+/* Results sections that fold, and the short tips list. */
+.fold > summary { list-style: none; cursor: pointer; margin: 0; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary h2 { margin: 0; }
+.fold > summary::after { content: "+"; margin-left: auto; color: var(--muted); }
+.fold[open] > summary::after { content: "–"; }
+.fold[open] > summary { margin-bottom: 10px; }
+.tips li.fold .d, .tips li.fold .src { display: none; }
+.tips li.fold.open .d, .tips li.fold.open .src { display: block; }
+.tips li.fold .t { cursor: pointer; }
+.tips li.fold .t::after { content: " ▸"; color: var(--muted); font-size: 12px; }
+.tips li.fold.open .t::after { content: " ▾"; }
+.tips:not(.all) li.extra { display: none; }
+.tips li.more { list-style: none; margin: 0 0 12px -22px; font-size: 14px; }
