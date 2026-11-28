@@ -1,0 +1,29 @@
+name: Bug or feedback
+description: Something broke, looked wrong, or could be better
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: For a wrong suggestion, say which one and why it looks wrong.
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: What did you load?
+      options:
+        - A combat log file
+        - A Warcraft Logs link
+        - The sample report
+        - Nothing yet
+  - type: input
+    id: link
+    attributes:
+      label: Warcraft Logs link (public reports only)
+      description: Leave empty if you used a file. Don't paste private logs.
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Filled in for you when you came from an error message. Keep it.
