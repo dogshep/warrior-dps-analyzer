@@ -88,6 +88,12 @@ export async function sim(request, onProgress, i = 0) {
   return call(workers[i].w, { request }, onProgress);
 }
 
+// The character sheet (active set bonuses, remaining miss chance) for a request's gear, on worker i. No sim runs.
+export async function stats(request, i = 0) {
+  await warm(i + 1);
+  return call(workers[i].w, { stats: request });
+}
+
 // One sim split across several workers: each runs its share of the iterations with its own seed, and the
 // parts are merged into one result. onProgress gets the average progress of the parts (0..1).
 export async function simSplit(request, onProgress, idx = [0]) {

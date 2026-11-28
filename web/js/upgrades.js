@@ -31,8 +31,7 @@ const sideOf = f => (f === 1 ? 1 : f === 0 ? 2 : 0);
 
 // Picks what to sim. gear: the 17 sim slots as in a RaidSimRequest ({id, enchant} or {}). Returns
 // [{slot, id, est}] where est is the build-time guess at the DPS gain over the current item, best first.
-// At most `perSlot` per slot and `max` in all: every slot with a likely upgrade gets its best candidate first,
-// then second picks fill what is left of the budget, biggest guesses first. kinds: the sources to include, as
+// At most `perSlot` per slot and `max` in all (see budget). kinds: the sources to include, as
 // letters (d dungeon or world drop, r raid, c crafted, q quest, v vendor, f reputation, p PvP); an item with
 // several sources is in when any of them is.
 export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max = 16, minGain = 1, kinds = 'drcqvf' } = {}) {
@@ -70,13 +69,55 @@ export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max 
       picks.push({ slot, id, est: Number.isFinite(est) ? est : null, val });
       if (picks.length >= limit) break;
     }
-    if (picks.length) bySlot.push(picks);
+    picks.forEach((c, i) => (c.rank = i));
+    bySlot.push(...picks);
   }
+  return budget(bySlot, max, perSlot);
+}
+
+// Cuts a candidate list (each with its rank within its slot, 0 = best) to `max`: every slot's best first, then
+// second picks and so on, biggest guesses first. Used again after candidates that fail a check are dropped.
+// perSlot (twice that for rings and trinkets, which all go against the weaker one) caps each slot.
+export function budget(cands, max, perSlot = Infinity) {
   // A null est (nothing known about the current item) sorts by the candidate's own value.
   const key = c => (c.est ?? c.val + 1000);
-  const first = bySlot.map(l => l[0]).sort((a, b) => key(b) - key(a)).slice(0, max);
-  const rest = bySlot.flatMap(l => l.slice(1)).sort((a, b) => key(b) - key(a)).slice(0, Math.max(0, max - first.length));
-  return [...first, ...rest].map(({ slot, id, est }) => ({ slot, id, est }));
+  const bySlot = new Map();
+  for (const c of cands) bySlot.set(c.slot, [...(bySlot.get(c.slot) || []), c]);
+  const kept = [];
+  for (const [slot, l] of bySlot) {
+    const limit = slot >= 10 && slot <= 13 ? perSlot * 2 : perSlot;
+    l.sort((a, b) => a.rank - b.rank).slice(0, limit).forEach((c, i) => kept.push({ ...c, rank: i }));
+  }
+  return kept.sort((a, b) => a.rank - b.rank || key(b) - key(a)).slice(0, max);
+}
+
+// The yellow (special attack) miss chance left after hit, in percent, from the sheet's main-hand auto attack miss
+// chance: dual wielding adds 19% to auto attacks only.
+export const yellowMiss = (remainingHit, dualWield) => Math.max(0, remainingHit - (dualWield ? 19 : 0));
+
+// Whether a swap takes the player below the hit cap: special attacks would miss after it, and more often than now.
+// A player already under the cap may still swap to an item that doesn't lose hit.
+export const breaksHitCap = (missBefore, missAfter) => missAfter > 0.05 && missAfter > missBefore + 0.05;
+
+// Set bonuses a swap loses and gains, from the sheet's active set lists ("Devilsaur Armor (2pc)").
+export function setChange(before, after) {
+  return { lost: before.filter(x => !after.includes(x)), gained: after.filter(x => !before.includes(x)) };
+}
+
+// The current gear with the item in `slot` taken out and its stats (and its enchant's) added back as bonus stats:
+// the same character without that item's set bonus. Comparing it with the current gear prices the bonus.
+// stats: {statIndex: value}, pseudo: {pseudoStatIndex: value}.
+export function withoutSetRequest(request, slot, stats, pseudo = {}) {
+  const r = structuredClone(request);
+  const player = r.raid.parties[0].players[0];
+  player.equipment.items[slot] = {};
+  const bonus = player.bonusStats || {};
+  const arr = (a, n) => Array.from({ length: n }, (_, i) => a?.[i] || 0);
+  const st = arr(bonus.stats, 39), ps = arr(bonus.pseudoStats, 40);
+  for (const [k, v] of Object.entries(stats)) st[k] += v;
+  for (const [k, v] of Object.entries(pseudo)) ps[k] += v;
+  player.bonusStats = { stats: st, pseudoStats: ps };
+  return r;
 }
 
 // The same request with one item swapped. It keeps the enchant on that slot, so the gain is the item's alone.
