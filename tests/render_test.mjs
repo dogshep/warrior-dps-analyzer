@@ -15,15 +15,16 @@ const a = analyzeFight(parser, w.guid, fight, names);
 
 // Stats: your DPS, and the sim cells only once there is a sim.
 assert.match(statsHtml(a, null), /Your DPS/);
-assert.match(statsHtml(a, null), /<b>…<\/b><span>Sim DPS, your gear/);
+assert.match(statsHtml(a, null), /<b>…<\/b><span>DPS in the sim/);
 const sim = { simDps: a.dps + 50, simCasts: new Map([['Bloodthirst', 99]]), simDmg: new Map([['Bloodthirst', 99000]]), iterations: 1 };
 assert.match(statsHtml(a, sim, { simDps: sim.simDps + 10 }), /More from full consumables/);
 
 // Cooldowns: one track per cooldown, plus the axis and legend.
 const cd = cooldownsHtml(a);
-assert.equal((cd.tracks.match(/class="track"/g) || []).length, a.cooldowns.length);
-assert.match(cd.tracks, /class="axis"/);
-assert.match(cd.note, /legend/);
+// Only missed cooldowns get a track.
+const missedCds = a.cooldowns.filter(r => r.lost > 0).length;
+assert.equal((cd.tracks.match(/class="track"/g) || []).length, missedCds);
+if (missedCds) { assert.match(cd.tracks, /class="axis"/); assert.match(cd.note, /legend/); } else assert.match(cd.tracks, /Every cooldown/);
 assert.equal(executeView(a) === null, !a.execute);
 
 // Tips: gear tips come after a "Gear and consumables" heading, the play list is capped at 8, and text is escaped.
@@ -57,10 +58,12 @@ assert.match(up, /Breaks Set A, worth about 5 DPS/);
 assert.match(up, /Completes Set B/);
 assert.match(up, /within sim noise/, 'gain 1 < 1.96 * 3');
 assert.match(up, /<span class="tag">Dungeon<\/span><span class="tag">Crafted<\/span>/);
-assert.match(up, /AH from 50s.*\(3 listed, median 60s\)/);
+assert.match(up, /AH from 50s/);
+assert.doesNotMatch(up, /instead of/);
+assert.doesNotMatch(upgradesHtml({ ...base, prices: { updated: now, houses: { 'us-normal-alliance': { updated: now, items: {} } } } }), /auction house right now/);
 assert.match(up, /Materials at least 90s/);
-assert.match(up, /hit cap for special attacks/);
-assert.match(up, /US Normal Alliance auction house/);
+assert.match(up, /under the hit cap/);
+assert.match(up, /US Normal Alliance AH/);
 assert.match(upgradesHtml({ ...base, prices: null }), /Auction house prices could not be loaded/);
 assert.match(upgradesHtml({ ...base, prices: { houses: {}, updated: now } }), /No auction house prices for this realm type/);
 assert.match(upgradesHtml({ ...base, rows: [] }), /None of the likely upgrades beat/);

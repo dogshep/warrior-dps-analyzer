@@ -13,15 +13,16 @@ export function cooldownsHtml(a) {
   const box = (cls, from, to, title) => `<i class="${cls}" style="left:${pct(from)};width:calc(${pct(to)} - ${pct(from)})"${title ? ` title="${esc(title)}"` : ''}></i>`;
   const back = a.pullSpans ? a.pullSpans.map(p => box('pull', p.start, p.end)).join('')
     : a.executeKnown ? box('exec', a.executeStart, f.end, 'Execute phase') : '';
-  const rows = a.cooldowns.map(r => {
-    const sub = a.pullSpans ? `used on ${r.usedPulls} of ${r.possible} possible pull${r.possible === 1 ? '' : 's'}` : `${r.uses.length} of ${r.possible} possible use${r.possible === 1 ? '' : 's'}`;
+  // Only the cooldowns that were missed; ones used whenever they came up stay off the chart.
+  const missed = a.cooldowns.filter(r => r.lost > 0);
+  const rows = missed.map(r => {
+    const sub = r.possible <= 1 ? 'not used' : a.pullSpans ? `used on ${r.usedPulls} of ${r.possible} pulls` : `${r.uses.length} of ${r.possible} uses`;
     const marks = back + r.idle.map(([x, y]) => box('idle', x, y, `Ready but unused ${mmss(x - f.start)}–${mmss(y - f.start)}`)).join('') +
       r.uses.map(u => box('use', u, u + r.dur * 1000, `${r.name} at ${mmss(u - f.start)}`)).join('');
     return `<div class="lbl"><b>${esc(r.name)}</b><span class="${r.lost ? 'warn' : ''}">${esc(sub)}</span></div><div class="track">${marks}</div>`;
   }).join('');
-  const tracks = rows + `<div class="axis"><span>0:00</span><span>${mmss(span / 2)}</span><span>${mmss(span)}</span></div>`;
-  const note = `<span class="legend"><span><i style="background:var(--accent)"></i>Cooldown up</span><span><i style="background:repeating-linear-gradient(135deg,#d9644a99 0 3px,transparent 3px 6px)"></i>Ready but unused</span>${a.pullSpans ? '<span><i style="background:#ffffff22"></i>Pull</span>' : a.executeKnown ? '<span><i style="background:#c7802f44"></i>Execute phase</span>' : ''}</span>` +
-    (a.pullSpans ? 'On a dungeon run, "possible" counts one use on each pull of 20s or more (any pull for Bloodrage) that the cooldown was back for, so a fast group is not held against you.' : 'Talent, racial and potion cooldowns only show once the log has you using them.');
+  const tracks = !missed.length ? '<p class="hint">Every cooldown was used when it came up.</p>' : rows + `<div class="axis"><span>0:00</span><span>${mmss(span / 2)}</span><span>${mmss(span)}</span></div>`;
+  const note = !missed.length ? '' : `<span class="legend"><span><i style="background:var(--accent)"></i>Cooldown up</span><span><i style="background:repeating-linear-gradient(135deg,#d9644a99 0 3px,transparent 3px 6px)"></i>Ready but unused</span>${a.pullSpans ? '<span><i style="background:#ffffff22"></i>Pull</span>' : a.executeKnown ? '<span><i style="background:#c7802f44"></i>Execute phase</span>' : ''}</span>`;
   return { tracks, note };
 }
 
@@ -40,8 +41,8 @@ export function statsHtml(a, s, ideal) {
   const cons = s && ideal ? ideal.simDps - s.simDps : null;
   const cells = [
     ['Your DPS', fmt(a.dps)],
-    ['Sim DPS, your gear', s ? fmt(s.simDps) : '…'],
-    ['Room to grow from play', s ? (s.simDps > a.dps ? `+${fmt(s.simDps - a.dps)}` : 'at or above sim') : '…', 'gap'],
+    ['DPS in the sim', s ? fmt(s.simDps) : '…'],
+    ['Possible gain', s ? (s.simDps > a.dps ? `+${fmt(s.simDps - a.dps)}` : 'at or above sim') : '…', 'gap'],
     ...(cons !== null && cons > 2 ? [['More from full consumables', `+${fmt(cons)}`, 'gap']] : []),
     a.isRun ? ['In combat', `${Math.round(a.dur / 60)} of ${Math.round((a.fight.end - a.fight.start) / 60000)} min, ${a.pulls} pulls`] : ['Fight length', `${Math.round(a.dur)}s`],
     ['Rotation', a.preset.replace('_', ' ')],
@@ -51,26 +52,26 @@ export function statsHtml(a, s, ideal) {
 }
 
 
-// What the listed play tips don't cover, so the group adds up to "Room to grow" exactly (using the rounded numbers
+// What the listed play tips don't cover, so the group adds up to "Possible gain" exactly (using the rounded numbers
 // shown on the page).
 export function restLine(play, gap) {
   if (!(gap > 0)) return '';
   const rest = Math.round(gap) - play.reduce((n, t) => n + (t.gain ? Math.round(t.gain) : 0), 0);
   if (rest < 1) return '';
-  return `<li><span class="t">Everything else</span><span class="g">≈ +${fmt(rest)} DPS</span><div class="d">Small differences from the sim that are too small to list or have no DPS number (like Battle Shout uptime), plus a little sim randomness. With this line, the play tips add up to your room to grow.</div></li>`;
+  return `<li><span class="t">Everything else</span><span class="g">≈ +${fmt(rest)} DPS</span><div class="d">Small differences from the sim that are too small to list or have no DPS number (like Battle Shout uptime), plus a little sim randomness. With this line, the play tips add up to your possible gain.</div></li>`;
 }
 
 
-// Play tips first (they share "Room to grow"), then gear and consumables (on top of it).
+// Play tips first (they share "Possible gain"), then gear and consumables (on top of it).
 export function tipsHtml(list, gap) {
   const links = t => t.links ? `<div class="src">Guide: ${t.links.map(([label, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`).join(' · ')}</div>` : '';
   const li = (t, i) => `<li${i ? '' : ' value="1"'}><span class="t">${esc(t.title)}</span>${t.gain ? `<span class="g">≈ +${fmt(t.gain)} DPS</span>` : ''}<div class="d">${esc(t.detail)}</div>${links(t)}</li>`;
   const play = list.filter(t => t.group !== 'gear').slice(0, 8), gear = list.filter(t => t.group === 'gear');
   const head = (title, note) => `<li class="grp"><b>${esc(title)}</b>${note ? `<span>${esc(note)}</span>` : ''}</li>`;
-  return     head('Play', gap > 0 ? `These share your room to grow (+${fmt(gap)}). Each is an estimate, and they overlap.` : '') +
+  return     head('Play', gap > 0 ? `These share your possible gain (+${fmt(gap)}). Each is an estimate, and they overlap.` : '') +
     (play.length ? play.map(li).join('') : '<li>Nothing big stands out. Nice work. Push for longer uptime and cleaner cooldown timing.</li>') +
     restLine(play, gap) +
-    (gear.length ? head('Gear and consumables', 'On top of your room to grow.') + gear.map(li).join('') : '');
+    (gear.length ? head('Gear and consumables', 'On top of your possible gain.') + gear.map(li).join('') : '');
 }
 
 
@@ -83,7 +84,7 @@ export function tablesHtml(a, names) {
     const e = audit.get(si);
     const nm = it.enchant ? esc(enchantName(names, it.enchant, si).replace(/^Enchant [\w\s-]+? - /, '')) : '';
     if (!e || e.ok) return nm;
-    return `<span class="warn">${nm || 'None'}</span><div class="hint">→ ${esc(e.best.slice(0, 2).join(' or '))}</div>`;
+    return `<span class="warn">${nm || 'None'}</span>`;
   };
   const gearHtml = gear.length
     ? '<tr><th>Slot</th><th>Item</th><th>Enchant</th></tr>' + LOG_TO_SIM_SLOTS.map((li, si) => {
@@ -105,7 +106,7 @@ export function underCapHtml(underCap, names) {
     seen.add(c.slot);
     list.push(`${SLOT_NAMES[c.slot]}: ${names.items[c.id]?.[ITEM.NAME] || `#${c.id}`} (${c.miss.toFixed(1)}% under)`);
   }
-  return list.length ? `<p class="hint">Left out because they would put you under the hit cap for special attacks: ${esc(list.join('; '))}.</p>` : '';
+  return list.length ? `<p class="hint">Left out (would drop you under the hit cap): ${esc(list.join('; '))}.</p>` : '';
 }
 
 
@@ -114,10 +115,8 @@ export function priceLine(table, prices, key, id) {
   if (!String(table.items[id]?.[SRC.KINDS] || '').includes(KIND_CRAFTED)) return '';
   const p = priceFor(prices, key, id);
   if (p === undefined) return '';
-  if (p === null) return '<div class="src">Not on the auction house right now</div>';
-  const ah = p.listed
-    ? `<div class="price">AH from ${gold(p.min)}${p.listed > 1 ? ` <span class="src">(${p.listed} listed, median ${gold(p.median)})</span>` : ''}</div>`
-    : '<div class="src">Not on the auction house right now</div>';
+  if (p === null) return '';
+  const ah = p.listed ? `<div class="price" title="${p.listed} listed, median ${gold(p.median)}">AH from ${gold(p.min)}</div>` : '';
   if (p.materials === undefined) return ah;
   const list = materialsList(prices, id);
   const missing = p.unpriced ? ` <span class="src">+ ${p.unpriced} not on the AH</span>` : '';
@@ -135,6 +134,11 @@ export function upgradesHtml(m) {
   const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
   const tags = id => [...(upgradeTable.items[id]?.[SRC.KINDS] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
   const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[ITEM.NAME] || `#${id}`)}</a>`;
+  // First source, then "+N more" (a small fold) for the rest.
+  const where = id => {
+    const [first, ...rest] = String(upgradeTable.items[id]?.[SRC.WHERE] || '').split(' · ');
+    return esc(first) + (rest.length ? `<details class="more"><summary>+${rest.length} more</summary>${esc(rest.join(' · '))}</details>` : '');
+  };
   const found = new Set(rows.map(r => r.slot));
   const none = [...new Set(cands.map(c => c.slot))].filter(s => !found.has(s)).map(s => SLOT_NAMES[s]);
   return (rows.length
@@ -143,13 +147,13 @@ export function upgradesHtml(m) {
         const cost = setCost.get(r.slot);
         const sets = (r.sets?.lost || []).map(x => `<div class="warn small">Breaks ${esc(x)}${cost ? `, worth about ${fmt(Math.max(0, cost.dps))} DPS (±${fmt(1.96 * cost.err)}). The gain already counts that loss.` : '. The gain already counts that loss.'}</div>`).join('') +
           (r.sets?.gained || []).map(x => `<div class="src">Completes ${esc(x)}</div>`).join('');
-        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[ITEM.NAME] || `#${cur}`)}</div>` : ''}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[SRC.WHERE] || '')}${priceLine(upgradeTable, prices, key, r.id)}</td></tr>`;
+        return `<tr><td${cur ? ` title="Replaces ${esc(names.items[cur]?.[ITEM.NAME] || `#${cur}`)}"` : ''}>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${where(r.id)}${priceLine(upgradeTable, prices, key, r.id)}</td></tr>`;
       }).join('') + '</table>'
     : '<p>None of the likely upgrades beat your current gear in the sim.</p>') +
-    (none.length ? `<p class="hint">Simmed but not an upgrade in your gear: ${esc(none.join(', '))}.</p>` : '') +
+    (none.length ? `<p class="hint">No upgrade found: ${esc(none.join(', '))}.</p>` : '') +
     underCapHtml(underCap, names) +
     (crafted ? `<p class="hint">${house
-      ? `Crafted item prices: lowest buyout on the ${region.toUpperCase()} ${MARKET_NAMES[market]} ${faction === 0 ? 'Horde' : 'Alliance'} auction house, from Blizzard's auction data, updated ${age(house.updated)}. Materials: what one craft's reagents cost from the cheapest listings there (hover for the list). Prices move; check in game.`
+      ? `Crafted prices: lowest ${region.toUpperCase()} ${MARKET_NAMES[market]} ${faction === 0 ? 'Horde' : 'Alliance'} AH buyout, updated ${age(house.updated)}. <a href="#how">How this works</a>`
       : prices ? 'No auction house prices for this realm type yet.' : 'Auction house prices could not be loaded.'}</p>` : '');
 }
 
