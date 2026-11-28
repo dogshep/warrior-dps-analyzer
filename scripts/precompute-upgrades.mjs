@@ -7,7 +7,8 @@
 //    procs, on-use effects, weapon skill or set bonuses, are simmed swapped into that same gear.
 // 3. web/sim/upgrades.json keeps, per rotation and slot, each item's DPS change from the reference item
 //    (simmed, or estimated from weights), and for the items the page may suggest [where it comes from, faction
-//    (0 both, 1 Alliance, 2 Horde), phase, source kinds (see KINDS)].
+//    (0 both, 1 Alliance, 2 Horde), phase, source kinds (see KINDS), and the date it can first be had in Forever
+//    when that is still ahead (see data/forever-availability.json)].
 //
 // Usage: node scripts/precompute-upgrades.mjs <wowsims db.json> <web/sim dir>
 // Env: UPGRADE_ITERS (item sims, default 300), UPGRADE_WEIGHT_ITERS (default 2000), UPGRADE_THREADS (default: CPU
@@ -17,8 +18,9 @@ import { availableParallelism } from 'node:os';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { createRequire } from 'node:module';
 import { gunzipSync } from 'node:zlib';
-import { DEFAULT_TALENTS, DEFAULT_CONSUMES, DEFAULT_TARGET } from '../web/js/analyze.js';
+import { DEFAULT_TALENTS, consumesFor, DEFAULT_TARGET } from '../web/js/analyze.js';
 import { SLOT_POOLS, poolFor } from '../web/js/upgrades.js';
+import { HELD_ITEMS, opensOn } from './availability.mjs';
 
 async function loadSim(simDir) {
   createRequire(import.meta.url)(new URL('wasm_exec.js', simDir).pathname);
@@ -71,7 +73,8 @@ const KINDS = 'drcqvfp';
 // Per slot, kind and faction, how many weapons (best by stat weights and weapon DPS) and how many items with procs,
 // on-use effects or weapon skill get simmed. Stat weights price everything else, and price it well.
 const SIM_TOP = 4;
-// Per slot, kind and faction, how many of the best items the page may pick from (and gets sources for).
+// Per slot, kind and faction, how many of the best items the page may pick from (and gets sources for). Items that
+// open later in Forever get their own quota, so they never crowd out what can be had now.
 const KEEP_TOP = 8;
 
 function sourceText(db, it) {
@@ -127,7 +130,7 @@ function kindsOf(it, raidZones) {
 // but Onyxia's Lair and Mount Hyjal, rewards of events Forever does not hold, and anything that needs those.
 function usable(it) {
   const so = it.scalingOptions?.['0'] || {};
-  if (it.phase !== 1) return false;
+  if (it.phase !== 1 || HELD_ITEMS.has(it.id)) return false;
   if ((it.quality || 0) < 3 || (so.ilvl || 0) < 55 || !(it.sources || []).length || it.randomSuffixOptions) return false;
   if (it.classAllowlist && !it.classAllowlist.includes(1)) return false;
   const t = it.type || 0;
@@ -143,7 +146,7 @@ function baseRequest(preset, apl, items, iterations, bonusStats) {
   return {
     raid: {
       parties: [{ players: [{
-        name: 'Warrior', race: 'RaceOrc', class: 'ClassWarrior', equipment: { items }, consumables: DEFAULT_CONSUMES,
+        name: 'Warrior', race: 'RaceOrc', class: 'ClassWarrior', equipment: { items }, consumables: consumesFor(preset),
         buffs: { greaterBlessingOfKings: true, greaterBlessingOfMight: 1 }, talentsString: DEFAULT_TALENTS[preset], rotation: apl,
         ...(bonusStats ? { bonusStats } : {}),
         dpsWarrior: { options: { classOptions: { useBattleShout: true, defaultStance: 'WarriorStanceBerserker' } } },
@@ -176,6 +179,9 @@ async function main() {
   // The items of a kind one faction can get, best first.
   const ofKind = (scored, k, side) => scored.filter(x => kinds.get(x.it.id).includes(k) && [0, side].includes(factionOf(x.it)));
   const candidates = raw.items.filter(usable);
+  const opens = new Map(candidates.map(it => [it.id, opensOn(it)]));
+  const later = candidates.filter(it => opens.get(it.id));
+  console.log(`${later.length} candidates open later in Forever: ${later.map(it => `${it.name} (${opens.get(it.id)})`).join(', ')}`);
   const t0 = Date.now();
   const { sim, close } = await pool(simDir, threads);
   let sims = 0;
@@ -236,8 +242,12 @@ async function main() {
       // [id, DPS change from the reference item, 1 if simmed else 0 (priced by stat weights)], best first.
       slots[key] = scored.map(x => [x.it.id, round(x.val), x.simmed]);
       const trusted = scored.filter(y => slot < 14 || y.simmed);
-      for (const k of KINDS) for (const side of [1, 2]) for (const x of ofKind(trusted, k, side).slice(0, KEEP_TOP)) {
-        out.items[x.it.id] ??= [sourceText(db, x.it), factionOf(x.it), x.it.phase || 1, kinds.get(x.it.id)];
+      for (const k of KINDS) for (const side of [1, 2]) for (const later of [false, true]) {
+        for (const x of ofKind(trusted, k, side).filter(y => !!opens.get(y.it.id) === later).slice(0, KEEP_TOP)) {
+          const meta = [sourceText(db, x.it), factionOf(x.it), x.it.phase || 1, kinds.get(x.it.id)];
+          if (opens.get(x.it.id)) meta.push(opens.get(x.it.id));
+          out.items[x.it.id] ??= meta;
+        }
       }
       const best = scored[0];
       console.log(`${preset} ${key}: ${pool.length} items, simmed ${pick.size}, best ${best.it.name} (${best.val >= 0 ? '+' : ''}${round(best.val)}${best.simmed ? ', simmed' : ''})`);

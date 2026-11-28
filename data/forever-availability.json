@@ -1,0 +1,49 @@
+{
+  "_about": [
+    "The one hand-kept list of what WoW Forever does not have yet, on top of wowsims/forever's own phase flags.",
+    "wowsims marks every item and enchant phase 1 (can be had now) or Unknown (not yet), and the build already drops Unknown ones.",
+    "This file covers the cases where that flag is wrong for Forever as it is live. scripts/make_names.py (enchants) and",
+    "scripts/precompute-upgrades.mjs (gear upgrades) read it at build time; the page never suggests what it holds back.",
+    "Each entry says why and where that was checked. Last full check: 2026-11-28 against Wowhead's Forever database",
+    "(wowhead.com/forever) and wowsims/forever 3b9c125. To release something, delete its entry; dated entries release",
+    "themselves on their date without a rebuild."
+  ],
+
+  "ptrOnlyEnchantItems": {
+    "_why": "Forever's own enchant scrolls ('Enchant Cloak - Agility' and friends, item ids 273458-273623, plus 289559). Wowhead's tooltip for every one of them says 'PTR Only', and wowsims gives most of them no source or the two test vendors Beneris and Alynsia. An enchant whose only item is one of these is not in Forever yet. Includes Living Stats (273593) and Grand Crusader (273607), which Shep's community confirmed missing on 2026-11-28.",
+    "ranges": [[273458, 273623]],
+    "ids": [289559]
+  },
+
+  "enchantsNotInForever": {
+    "_why": "Enchant effect ids to hold back whatever wowsims says (in every slot).",
+    "7645": "Living Stats: PTR-only scroll, confirmed missing in game (Shep, 2026-11-28).",
+    "7940": "Grand Crusader: PTR-only scroll, confirmed missing in game (Shep, 2026-11-28)."
+  },
+
+  "itemsNotInForever": {
+    "_why": "Item ids never to suggest as gear upgrades, whatever wowsims says. Empty: every phase 1 upgrade candidate exists on Wowhead Forever and none is PTR only."
+  },
+
+  "opensLater": [
+    {
+      "date": "2026-12-09",
+      "_why": "Barrow Deeps, Hyjal Summit and Onyxia's Lair all unlock on 9 December 2026 (Blizzard, via Wowhead news 2026-10-20: wowhead.com/forever/news/learn-more-about-the-wow-forever-raids-and-attunements-383508). Until then no raid loot, raid quest reward or raid reputation can be had, though wowsims already counts Onyxia's Lair and the Hyjal raid open.",
+      "factions": {
+        "2819": "The Watchers: their reputation comes from the Barrow Deeps (Wowhead: the quest 'Unsullied Owl Statuette' is an item found in the Barrow Deeps; quartermaster Nelanna Keeneye in Winterspring). Their signets (Initiate's, Tracker's, Watcher's and Warden's Signet of Ferocity and friends) wait for the raid."
+      },
+      "quests": {
+        "7491": "For All To See (Head of Onyxia, Horde): Dragonslayer's Signet, Onyxia Tooth Pendant, Onyxia Blood Talisman.",
+        "7496": "Celebrating Good Times (Head of Onyxia, Alliance): the same rewards.",
+        "7509": "The Forging of Quel'Serrar: needs Onyxia's breath."
+      },
+      "zones": {
+        "2159": "Onyxia's Lair: any drop or quest there."
+      },
+      "items": {
+        "15138": "Onyxia Scale Cloak: crafted from a Scale of Onyxia (Wowhead Forever, spell 19093).",
+        "15141": "Onyxia Scale Breastplate: crafted from 12 Scale of Onyxia (Wowhead Forever, spell 19106)."
+      }
+    }
+  ]
+}

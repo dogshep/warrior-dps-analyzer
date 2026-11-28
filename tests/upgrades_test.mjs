@@ -1,6 +1,6 @@
 // Unit checks for picking upgrade candidates. Usage: node tests/upgrades_test.mjs
 import assert from 'node:assert/strict';
-import { pickCandidates, swapRequest, bestPerSlot, poolFor, budget, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from '../web/js/upgrades.js';
+import { pickCandidates, openNow, swapRequest, bestPerSlot, poolFor, budget, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from '../web/js/upgrades.js';
 import { auditEnchants } from '../web/js/analyze.js';
 
 // [id, value vs the reference item, simmed]; items: [source, faction, phase, group]
@@ -91,4 +91,18 @@ const audit = auditEnchants(eg, names);
 assert.deepEqual(audit.find(e => e.slot === 4).best, ['Greater Stats (+4 all stats)']);
 assert.deepEqual(audit.find(e => e.slot === 14).best, ['Crusader']);
 assert.ok(!audit.some(e => e.slot === 2));
+// Per slot type (names.json now): +15 Strength is in Forever on weapons but only a PTR scroll on gloves, and the
+// +5 Agility cloak scroll is PTR only, so the audit falls back to what can be had.
+const n2 = { items: { 5: ['Gloves', 7], 6: ['Cloak', 4] }, enchants: {}, enchantPhase: { 2564: { 7: 1 }, 2563: { 7: 2, 13: 1 }, 8206: { 7: 1 }, 8207: { 7: 1 }, 7667: { 4: 2 }, 849: { 4: 1 } } };
+const g2 = []; g2[9] = { id: 5, enchant: 0 }; g2[14] = { id: 6, enchant: 0 };
+const a2 = auditEnchants(g2, n2);
+assert.deepEqual(a2.find(e => e.slot === 6).best, ['Superior Agility (+15)']);
+assert.deepEqual(a2.find(e => e.slot === 3).best, ['Lesser Agility (+3)']);
+
+// Items that open later in Forever (the raids on 2026-12-09) stay out until that day, then come in.
+const t2 = { presets: { fury: { slots: { ring: [[31, 20, 0], [32, 10, 0]] } } }, items: { 31: ['Head of Onyxia', 0, 1, 'q', '2026-12-09'], 32: ['Dungeon', 0, 1, 'd'] } };
+const before = Date.parse('2026-12-01T12:00:00'), after = Date.parse('2026-12-09T12:00:00');
+assert.deepEqual(pickCandidates(gear, t2, 'fury', 0, { now: before }).map(x => x.id), [32]);
+assert.deepEqual(pickCandidates(gear, t2, 'fury', 0, { now: after }).map(x => x.id), [31, 32]);
+assert.equal(openNow(['x', 0, 1, 'd']), true);
 console.log('upgrades_test: ok');

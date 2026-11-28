@@ -33,8 +33,11 @@ const sideOf = f => (f === 1 ? 1 : f === 0 ? 2 : 0);
 // [{slot, id, est}] where est is the build-time guess at the DPS gain over the current item, best first.
 // At most `perSlot` per slot and `max` in all (see budget). kinds: the sources to include, as
 // letters (d dungeon or world drop, r raid, c crafted, q quest, v vendor, f reputation, p PvP); an item with
-// several sources is in when any of them is.
-export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max = 16, minGain = 1, kinds = 'drcqvf' } = {}) {
+// several sources is in when any of them is. An item WoW Forever only opens later (its date, the table's 5th field,
+// from data/forever-availability.json) is left out until that day in the viewer's time zone, so it shows up then
+// without a rebuild.
+export const openNow = (meta, now = Date.now()) => !meta[4] || now >= Date.parse(`${meta[4]}T00:00:00`);
+export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max = 16, minGain = 1, kinds = 'drcqvf', now = Date.now() } = {}) {
   const p = table?.presets?.[preset];
   if (!p) return [];
   const side = sideOf(faction);
@@ -63,7 +66,7 @@ export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max 
       // Weapons are only picked when the build simmed them; weights alone misjudge speed and procs.
       if (id === cur || id === other || (slot >= 14 && !simmed)) continue;
       const meta = table.items[id];
-      if (!meta || (side && meta[1] && meta[1] !== side) || ![...meta[3]].some(k => kinds.includes(k))) continue;
+      if (!meta || !openNow(meta, now) || (side && meta[1] && meta[1] !== side) || ![...meta[3]].some(k => kinds.includes(k))) continue;
       const est = val - curVal;
       if (est < minGain) continue;
       picks.push({ slot, id, est: Number.isFinite(est) ? est : null, val });
