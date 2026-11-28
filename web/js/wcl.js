@@ -171,6 +171,8 @@ export async function loadReport(code, fetchImpl) {
   const warriors = r.masterData.actors.filter(a => a.subType === 'Warrior').map(a => ({ guid: String(a.id), id: a.id, name: a.name, hasGear: true }));
   const fights = r.fights.filter(f => f.endTime - f.startTime > 10000).map(f => ({
     id: f.id, kind: f.encounterID ? 'boss' : 'trash', name: f.name, start: f.startTime, end: f.endTime, success: !!f.kill,
+    // Actor ids of the players in the fight; null when the answer didn't say (an older cached answer).
+    players: Array.isArray(f.friendlyPlayers) ? f.friendlyPlayers : null,
   }));
   const abilities = new Map(r.masterData.abilities.map(a => [a.gameID, a.name]));
   return { code, title: r.title, warriors, fights, abilities, actors: r.masterData.actors };

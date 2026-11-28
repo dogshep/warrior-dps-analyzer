@@ -66,7 +66,7 @@ node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis i
 | `web/index.html`, `web/style.css`, `web/js/app.js` | The page |
 | `web/js/logparser.js` | Combat log parser |
 | `web/js/analyze.js` | Fight metrics, the wowsims request, sim comparison and suggestions |
-| `web/js/sim-worker.js` | Loads the WASM sim in a Web Worker |
+| `web/js/simpool.js`, `web/js/sim-worker.js` | Downloads the WASM sim once and runs it in up to 4 Web Workers |
 | `web/js/upgrades.js` | Picks upgrade candidates per slot and reads the sim results |
 | `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |
 | `scripts/precompute-upgrades.mjs` | Ranks gear per rotation for the upgrades section (`web/sim/upgrades.json`) |
