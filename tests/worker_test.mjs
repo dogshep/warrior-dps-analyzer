@@ -14,17 +14,22 @@ globalThis.fetch = async (url, opts) => {
   return new Response(JSON.stringify(reportReply), { status });
 };
 const store = new Map();
-globalThis.caches = { default: { match: async k => store.get(k.url)?.clone(), put: async (k, r) => { store.set(k.url, r); } } };
+globalThis.caches = { default: { match: async k => store.get(k.url)?.clone(), put: async (k, r) => { store.set(k.url, new Response(await r.arrayBuffer(), r)); }, delete: async k => store.delete(k.url) } };
 
 const { default: worker } = await import('../worker/index.js');
 const env = { WCL_CLIENT_ID: 'id', WCL_CLIENT_SECRET: 'secret', ALLOWED_ORIGINS: 'https://dogshep.github.io' };
-const ctx = { waitUntil: p => p };
+const waits = [];
+const ctx = { waitUntil: p => waits.push(p) };
+const settle = () => Promise.all(waits.splice(0));
 const req = (body, origin = 'https://dogshep.github.io') => new Request('https://w.dev/', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 let r = await worker.fetch(req({ op: 'report', variables: { code: '83cYV91DARnwWNaj' } }), env, ctx);
 assert.equal(r.status, 200);
 assert.equal(r.headers.get('Access-Control-Allow-Origin'), 'https://dogshep.github.io');
+assert.equal(r.headers.get('X-Cache'), 'miss');
+assert.equal(r.headers.get('Access-Control-Expose-Headers'), 'X-Cache');
 assert.equal((await r.json()).data.reportData.report.title, 'UBRS');
+await settle();
 const sent = JSON.parse(calls.find(c => c.url.includes('/api/v2/client')).opts.body);
 assert.match(sent.query, /masterData/);
 
@@ -50,6 +55,7 @@ reportReply = { data: { reportData: { report: { mine: { data: [{ timestamp: 1 }]
 r = await worker.fetch(req({ op: 'mine', variables: ev }), env, ctx);
 assert.equal(r.status, 200);
 assert.equal((await r.json()).data.reportData.report.mine.data.length, 1);
+await settle();
 const { actor, ...noActor } = ev;
 assert.equal((await worker.fetch(req({ op: 'deaths', variables: noActor }), env, ctx)).status, 200);
 assert.equal((await worker.fetch(req({ op: 'report', variables: { code: '83cYV91DARnwWNaj' } }, 'https://evil.example'), env, ctx)).status, 403);
@@ -93,4 +99,31 @@ assert.equal(r.status, 429);
 r = await worker.fetch(reqIp({ op: 'report', variables: { code: '83cYV91DARnwWNaj' } }), limited, ctx);
 assert.equal(r.status, 200);
 assert.equal(r.headers.get('X-Cache'), 'hit');
+await settle();
+
+// A big events page (about 5 MB, arriving in 64 KB pieces) is streamed to the page and the cache unchanged.
+const big = JSON.stringify({ data: { reportData: { report: { mine: { data: Array.from({ length: 40000 }, (_, i) => ({ timestamp: i, type: 'damage', sourceID: 7, targetID: 99, abilityGameID: 23894, amount: 512, classResources: [{ amount: 450, max: 1000, type: 1 }] })), nextPageTimestamp: null } } } } });
+const chunked = text => { const bytes = new TextEncoder().encode(text); let i = 0; return new ReadableStream({ pull(c) { if (i >= bytes.length) return c.close(); c.enqueue(bytes.slice(i, i += 65536)); } }); };
+globalThis.fetch = async url => url.endsWith('/oauth/token') ? new Response(JSON.stringify({ access_token: 'T', expires_in: 3600 })) : new Response(chunked(big), { status: 200 });
+const bigEv = { ...ev, fight: 42 };
+r = await worker.fetch(req({ op: 'mine', variables: bigEv }), env, ctx);
+assert.equal(r.status, 200);
+assert.equal(await r.text(), big);
+await settle();
+r = await worker.fetch(req({ op: 'mine', variables: bigEv }), env, ctx);
+assert.equal(r.headers.get('X-Cache'), 'hit');
+assert.equal(await r.text(), big);
+
+// A page that starts well but ends in GraphQL errors still reaches the page (which reports the error), but isn't cached.
+const partial = big.slice(0, -1) + ',"errors":[{"message":"Something broke"}]}';
+globalThis.fetch = async url => url.endsWith('/oauth/token') ? new Response(JSON.stringify({ access_token: 'T', expires_in: 3600 })) : new Response(chunked(partial), { status: 200 });
+const errEv = { ...ev, fight: 43 };
+r = await worker.fetch(req({ op: 'mine', variables: errEv }), env, ctx);
+assert.equal(await r.text(), partial);
+await settle();
+r = await worker.fetch(req({ op: 'mine', variables: errEv }), env, ctx);
+assert.notEqual(r.headers.get('X-Cache'), 'hit');
+await r.text();
+await settle();
+globalThis.fetch = realFetch;
 console.log('worker tests passed');
