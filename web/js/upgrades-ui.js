@@ -43,11 +43,90 @@ export function resetUpgrades() {
   lastUpgrades = null;
   $('upgOut').innerHTML = '';
   $('upgNote').textContent = '';
+  $('upgRefine').hidden = true;
   const last = getLast();
   $('upgGo').disabled = !last;
   if (!last) { $('upgEta').textContent = ''; return; }
   const n = Number($('upgMax').value), ms = upgradePlan(n, SCREEN).ms + upgradePlan(Math.min(n, REFINE.keep), REFINE).ms;
   $('upgEta').textContent = `Up to ${n} items: about ${Math.max(1, Math.round(Math.min(ms, UPGRADE_TIME_CAP_MS) / 1000))}s, with a first look sooner.`;
+}
+
+// The character sheet for the current gear and for each swap (milliseconds each, no sim): which candidates would
+// drop the player under the hit cap, and which set bonuses each one breaks or completes.
+async function checkHitAndSets(probe, likely, dualWield) {
+  const sheetNow = await pool.stats(probe);
+  const missNow = yellowMiss(sheetNow.remainingHit ?? 0, dualWield);
+  const checked = [], underCap = [];
+  for (const c of likely) {
+    const sheet = await pool.stats(swapRequest(probe, c.slot, c.id));
+    const miss = yellowMiss(sheet.remainingHit ?? 0, dualWield);
+    if (sheetNow.remainingHit != null && breaksHitCap(missNow, miss)) underCap.push({ ...c, miss });
+    else checked.push({ ...c, sets: setChange(sheetNow.sets, sheet.sets) });
+  }
+  return { checked, underCap };
+}
+
+// One sim per slot whose set bonus a candidate breaks: the gear without that item, its stats (and its enchant's)
+// added back. [{slot, stats, pseudo}]
+export function setJobsFor(cands, gear, names) {
+  return [...new Set(cands.filter(c => c.sets.lost.length).map(c => c.slot))].flatMap(slot => {
+    const it = gear[slot], si = names.setItems?.[it.id];
+    if (!si) return [];
+    const stats = { ...si[0] };
+    const ench = it.enchant && names.enchantStats?.[it.enchant];
+    if (ench) for (const [k, v] of Object.entries(ench[SLOT_ITEM_TYPE[slot]] || Object.values(ench)[0])) stats[k] = (stats[k] || 0) + v;
+    return [{ slot, stats, pseudo: si[1] }];
+  });
+}
+
+// The jobs for a pass: the current gear (twice the fights), each candidate swapped in, and the set bonus sims.
+// base: the request for the current gear at `iters` fights. A job is {k, req, w}, w = its weight in candidate sims.
+export function jobsFor(base, list, setJobs, iters) {
+  return [{ k: 'base', req: { ...base, simOptions: { ...base.simOptions, iterations: iters * 2 } }, w: 2 },
+    ...list.map(c => ({ k: `${c.slot}:${c.id}`, req: swapRequest(base, c.slot, c.id), w: 1 })),
+    ...setJobs.map(j => ({ k: `set${j.slot}`, req: withoutSetRequest(base, j.slot, j.stats, j.pseudo), w: 1 }))];
+}
+
+// Sims the jobs across the workers and returns Map k -> {avg, stdev, n}. show(elapsed, done 0..1) draws the progress.
+// A cancelled sim just leaves its entry out.
+async function runPass(jobs, show, t0) {
+  const total = jobs.reduce((s, j) => s + j.w, 0), done = new Map(), queue = [...jobs], out = new Map();
+  const draw = () => show(`${Math.round((performance.now() - t0) / 1000)}s`, [...done.values()].reduce((x, y) => x + y, 0) / total);
+  draw();
+  await Promise.all(Array.from({ length: UPGRADE_WORKERS }, async (_, w) => {
+    for (let job; (job = queue.shift());) {
+      try {
+        const r = await pool.sim(job.req, ({ stage, done: f }) => { if (stage === 'sim') { done.set(job.k, f * job.w); draw(); } }, w);
+        out.set(job.k, { ...r.raidMetrics.parties[0].players[0].dps, n: r.iterations });
+      } catch (e) { if (!(e instanceof CancelledError)) throw e; return; }
+    }
+  }));
+  return out;
+}
+
+// The standard error of a candidate's gain over the base sim.
+const gainErr = (r, b) => Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n);
+
+// [{slot, id, ..., dps, err}] for the candidates whose sim finished; b is the base sim.
+export const resultsOf = (list, out, b) => list.flatMap(c => {
+  const r = out.get(`${c.slot}:${c.id}`);
+  return r ? [{ ...c, dps: r.avg, err: gainErr(r, b) }] : [];
+});
+
+// Map slot -> {dps, err}: what each broken set bonus is worth, for the slots whose set sim finished.
+export const setCostOf = (setJobs, out, b) => new Map(setJobs.filter(j => out.has(`set${j.slot}`)).map(j => {
+  const r = out.get(`set${j.slot}`);
+  return [j.slot, { dps: b.avg - r.avg, err: gainErr(r, b) }];
+}));
+
+const bar = (label, done) => ($('upgOut').innerHTML = `<p class="hint">${esc(label)}</p><div class="bar"><span style="width:${Math.round(done * 100)}%"></span></div>`);
+
+// The strip above the table while the second pass runs. It sits outside #upgOut so a redraw of the table doesn't remove it.
+function showRefine(label, done) {
+  const el = $('upgRefine');
+  el.hidden = false;
+  el.querySelector('p').textContent = label;
+  el.querySelector('span').style.width = `${Math.round(done * 100)}%`;
 }
 
 async function findUpgrades() {
@@ -58,80 +137,27 @@ async function findUpgrades() {
   $('upgGo').disabled = true;
   $('upgCancel').hidden = false;
   $('upgNote').textContent = '';
-  const bar = (label, done) => ($('upgOut').innerHTML = `<p class="hint">${esc(label)}</p><div class="bar"><span style="width:${Math.round(done * 100)}%"></span></div>`);
   bar('Loading the upgrade list…', 0);
   let timer = null;
   try {
     upgradeTable ??= await fetch('sim/upgrades.json').then(r => { if (!r.ok) throw new Error('No upgrade list in this build of the page.'); return r.json(); });
-    const probe = buildRequest(a, last.parser, names, apls, opts);
+    const request = iters => buildRequest(a, last.parser, names, apls, { ...opts, iterations: iters });
+    const probe = request(opts.iterations);
     const gear = probe.raid.parties[0].players[0].equipment.items;
     if (!gear.some(g => g.id)) throw new Error('No gear in this log, so there is nothing to compare against.');
     // Twice the usual picks per slot, so there are spares for the ones the hit cap check drops.
     const likely = pickCandidates(gear, upgradeTable, a.preset, a.combatant?.faction, { perSlot: 4, max: 200, kinds: upgradeKinds() });
     if (!likely.length) { $('upgOut').innerHTML = `<p>${upgradeKinds() ? 'Nothing in the upgrade list beats what you wear from these sources. Try ticking more of them.' : 'Tick at least one source.'}</p>`; return; }
-    // The character sheet for the current gear and each swap (milliseconds each, no sim): hit and set bonuses.
     bar('Checking hit and set bonuses…', 0);
     const ohInfo = names.items[gear[15]?.id];
     const dualWield = !!ohInfo && ohInfo[ITEM.TYPE] === ITEM_TYPE_WEAPON;
-    const sheetNow = await pool.stats(probe);
-    const missNow = yellowMiss(sheetNow.remainingHit ?? 0, dualWield);
-    const checked = [], underCap = [];
-    for (const c of likely) {
-      const sh = await pool.stats(swapRequest(probe, c.slot, c.id));
-      const miss = yellowMiss(sh.remainingHit ?? 0, dualWield);
-      const sets = setChange(sheetNow.sets, sh.sets);
-      if (sheetNow.remainingHit != null && breaksHitCap(missNow, miss)) underCap.push({ ...c, miss });
-      else checked.push({ ...c, sets });
-    }
+    const { checked, underCap } = await checkHitAndSets(probe, likely, dualWield);
     const cands = budget(checked, Number($('upgMax').value), 2);
-    // One sim per slot whose set bonus a candidate breaks: the gear without that item, its stats added back.
-    const setJobs = [...new Set(cands.filter(c => c.sets.lost.length).map(c => c.slot))].flatMap(slot => {
-      const it = gear[slot], si = names.setItems?.[it.id];
-      if (!si) return [];
-      const st = { ...si[0] };
-      const ench = it.enchant && names.enchantStats?.[it.enchant];
-      if (ench) for (const [k, v] of Object.entries(ench[SLOT_ITEM_TYPE[slot]] || Object.values(ench)[0])) st[k] = (st[k] || 0) + v;
-      return [{ slot, stats: st, pseudo: si[1] }];
-    });
     if (!cands.length) {
       $('upgOut').innerHTML = '<p>Every likely upgrade from these sources would put you under the hit cap.</p>' + underCapHtml(underCap, names);
       return;
     }
-    const t0 = performance.now();
-    let capped = false;
-    timer = setTimeout(() => { capped = true; ctx.cancelSim(); }, UPGRADE_TIME_CAP_MS);
-    const threads = `${UPGRADE_WORKERS} thread${UPGRADE_WORKERS > 1 ? 's' : ''}`;
-    // One pass: sims the jobs [{k, req, w}] (w = weight in units of one candidate sim) across the workers and
-    // returns Map k -> {avg, stdev, n}. show(elapsed, done 0..1) draws the progress.
-    const runPass = async (jobs, show) => {
-      const total = jobs.reduce((s, j) => s + j.w, 0), done = new Map(), queue = [...jobs], out = new Map();
-      const draw = () => show(`${Math.round((performance.now() - t0) / 1000)}s`, [...done.values()].reduce((x, y) => x + y, 0) / total);
-      draw();
-      await Promise.all(Array.from({ length: UPGRADE_WORKERS }, async (_, w) => {
-        for (let job; (job = queue.shift());) {
-          try {
-            const r = await pool.sim(job.req, ({ stage, done: f }) => { if (stage === 'sim') { done.set(job.k, f * job.w); draw(); } }, w);
-            out.set(job.k, { ...r.raidMetrics.parties[0].players[0].dps, n: r.iterations });
-          } catch (e) { if (!(e instanceof CancelledError)) throw e; return; }
-        }
-      }));
-      return out;
-    };
-    // The jobs for a pass: the current gear (twice the fights), each candidate swapped in, and the set bonus sims.
-    const jobsFor = (list, sets, iters) => {
-      const base = buildRequest(a, last.parser, names, apls, { ...opts, iterations: iters });
-      return [{ k: 'base', req: { ...base, simOptions: { ...base.simOptions, iterations: iters * 2 } }, w: 2 },
-        ...list.map(c => ({ k: `${c.slot}:${c.id}`, c, req: swapRequest(base, c.slot, c.id), w: 1 })),
-        ...sets.map(j => ({ k: `set${j.slot}`, req: withoutSetRequest(base, j.slot, j.stats, j.pseudo), w: 1 }))];
-    };
-    const resultsOf = (list, out, b) => list.flatMap(c => {
-      const r = out.get(`${c.slot}:${c.id}`);
-      return r ? [{ ...c, dps: r.avg, err: Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n) }] : [];
-    });
-    const setCostOf = (out, b) => new Map(setJobs.filter(j => out.has(`set${j.slot}`)).map(j => {
-      const r = out.get(`set${j.slot}`);
-      return [j.slot, { dps: b.avg - r.avg, err: Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n) }];
-    }));
+    const setJobs = setJobsFor(cands, gear, names);
     const prices = await loadPrices();
     const show = (results, setCost, baseAvg) => {
       lastUpgrades = { rows: bestPerSlot(results, baseAvg), gear, names, cands: results, setCost, underCap, prices, faction: a.combatant?.faction };
@@ -139,35 +165,34 @@ async function findUpgrades() {
       showPriceAge();
     };
 
+    const t0 = performance.now();
+    let capped = false;
+    timer = setTimeout(() => { capped = true; ctx.cancelSim(); }, UPGRADE_TIME_CAP_MS);
+    const threads = `${UPGRADE_WORKERS} thread${UPGRADE_WORKERS > 1 ? 's' : ''}`;
+
     // Pass 1: every candidate, few fights each.
     const s1 = upgradePlan(cands.length + setJobs.length, SCREEN).iters;
-    const out1 = await runPass(jobsFor(cands, setJobs, s1), (t, f) => bar(`Screening ${cands.length} possible upgrades, ${s1} fights each, on ${threads}… ${t}`, f));
+    const out1 = await runPass(jobsFor(request(s1), cands, setJobs, s1), (t, f) => bar(`Screening ${cands.length} possible upgrades, ${s1} fights each, on ${threads}… ${t}`, f), t0);
     const b1 = out1.get('base');
     if (!b1) throw new CancelledError({ capped });
-    const res1 = resultsOf(cands, out1, b1), cost1 = setCostOf(out1, b1);
+    const res1 = resultsOf(cands, out1, b1), cost1 = setCostOf(setJobs, out1, b1);
     show(res1, cost1, b1.avg);
+
+    // Pass 2: the candidates that could still win their slot, more fights each. The first table stays up with a
+    // progress strip above it, and is replaced when the longer sims finish.
     const keep = refineSet(res1, b1.avg, { maxKeep: REFINE.keep });
     const keepSets = setJobs.filter(j => keep.some(c => c.slot === j.slot));
-    let finalN = s1, refined = 0;
     if (keep.length && !capped) {
-      // Pass 2: the candidates that could still win their slot, more fights each. The first table stays up with a
-      // progress strip above it, and is replaced when the longer sims finish.
       const s2 = upgradePlan(keep.length + keepSets.length, REFINE).iters;
-      $('upgOut').insertAdjacentHTML('afterbegin', '<div id="upgRefine"><p class="hint"></p><div class="bar"><span></span></div></div>');
-      const el = $('upgRefine');
-      const out2 = await runPass(jobsFor(keep, keepSets, s2), (t, f) => {
-        el.querySelector('p').textContent = `First look below. Re-simming the top ${keep.length} with ${s2} fights each… ${t}`;
-        el.querySelector('span').style.width = `${Math.round(f * 100)}%`;
-      });
+      const out2 = await runPass(jobsFor(request(s2), keep, keepSets, s2), (t, f) => showRefine(`First look below. Re-simming the top ${keep.length} with ${s2} fights each… ${t}`, f), t0);
       const b2 = out2.get('base');
+      // If it stopped early, the first look stays as the answer.
       if (b2 && keep.every(c => out2.has(`${c.slot}:${c.id}`))) {
-        finalN = s2; refined = keep.length;
         // Refined numbers for the top candidates; the others keep their screened gain, moved onto the new base.
         const rest = res1.filter(r => !keep.some(c => c.slot === r.slot && c.id === r.id)).map(r => ({ ...r, dps: r.dps - b1.avg + b2.avg }));
-        show([...resultsOf(keep, out2, b2), ...rest], new Map([...cost1, ...setCostOf(out2, b2)]), b2.avg);
-      } else el.remove(); // stopped early: the first look stays as the answer
+        show([...resultsOf(keep, out2, b2), ...rest], new Map([...cost1, ...setCostOf(setJobs, out2, b2)]), b2.avg);
+      }
     }
-    clearTimeout(timer);
     const secs = (performance.now() - t0) / 1000;
     $('upgNote').innerHTML = `Simmed ${res1.length} item${res1.length === 1 ? '' : 's'} against your gear in ${secs.toFixed(0)}s.` +
       (capped ? ` Stopped at the ${UPGRADE_TIME_CAP_MS / 1000}s limit.` : '') + ' <a href="#how">How this works</a>';
@@ -176,6 +201,7 @@ async function findUpgrades() {
       : e instanceof CancelledError ? '<p class="hint">Cancelled.</p>' : `<p class="warn">${esc(e.message || e)}</p>`;
   } finally {
     clearTimeout(timer);
+    $('upgRefine').hidden = true;
     $('upgGo').disabled = !getLast();
     $('upgCancel').hidden = true;
   }
