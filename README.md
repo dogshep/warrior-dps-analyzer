@@ -1,14 +1,24 @@
 # Warrior DPS Analyzer
 
-A web page for WoW Forever DPS warriors. Drop in a combat log and get a short list of things to try on your next dungeon or raid.
+A web page for WoW Forever DPS warriors. Drop in a combat log, or paste a Warcraft Logs report link, and get a short list of things to try on your next dungeon or raid.
 
 It runs entirely in your browser:
 
 1. **Parses the log** (`WoWCombatLog-*.txt`): fights (boss encounters and trash pulls), your casts, damage, rage, buffs, deaths, and your gear and enchants from `COMBATANT_INFO`.
 2. **Sims your exact gear** with [wowsims/forever](https://github.com/wowsims/forever), compiled to WebAssembly, using the wowsims Fury, Fury 2H or Arms rotation, the fight's length and target count, and the buffs and consumables seen in the log.
 3. **Compares you to the sim.** For each ability it compares your casts to the sim's and prices the gap using your own damage per cast. It also checks cooldowns (Death Wish, Recklessness, Bloodrage, racials), Battle Shout uptime, rage use (capping, or Heroic Strike starving Bloodthirst and Whirlwind), the execute phase, time spent not attacking, deaths, missing enchants and missing consumables.
-4. **Ranks the suggestions** by estimated DPS gained.
+4. **Ranks the suggestions** by estimated DPS gained. Each play tip links to the matching section of the Forever Fury
+   guides from [Warcraft Tavern](https://www.warcrafttavern.com/forever/guides/fury-warrior/) and
+   [Icy Veins](https://www.icy-veins.com/wow-forever/fury-warrior-melee-dps-pve-rotation-cooldowns-abilities).
+   Overpower and Rend are marked optional, since they only pay in narrow cases. Where a guide and the sim
+   disagree, the tips follow the sim's rotation.
 5. **Finds gear upgrades** on request: the best next item per slot and where it drops, is crafted or sold.
+
+## Speed
+
+The page downloads and compiles the 6 MB sim once, then hands it to up to 4 Web Workers that start while you
+pick a log, so Analyze usually takes 6 to 9 seconds. Big Warcraft Logs pages stream through the Worker instead of
+being buffered, so long dungeon runs don't hit its time limit.
 
 ## How gear upgrades are found
 
@@ -62,6 +72,7 @@ Needs Go (the version in wowsims' `go.mod`), Python 3 with `pip install grpcio-t
 scripts/build-sim.sh            # clones wowsims/forever into .wowsims and builds web/sim/ (SKIP_UPGRADES=1 skips the slow gear ranking)
 python3 -m http.server -d web   # then open http://localhost:8000
 node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis in the terminal
+for t in tests/*_test.mjs; do node "$t" || break; done     # unit tests (the deploy runs these too)
 ```
 
 `tests/make_fixture.mjs` writes the synthetic sample log in `tests/`. It plays a deliberately sloppy fury rotation and exists to smoke test the pipeline.
@@ -73,17 +84,25 @@ node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis i
 | `web/index.html`, `web/style.css`, `web/js/app.js` | The page |
 | `web/js/logparser.js` | Combat log parser |
 | `web/js/analyze.js` | Fight metrics, the wowsims request, sim comparison and suggestions |
+| `web/js/cooldowns.js` | Cooldown timing (missed uses, holding for execute, per-pull view on dungeon runs) |
 | `web/js/rage.js` | Rage read (Heroic Strike starving or overcapping) and the execute phase report |
 | `web/js/simpool.js`, `web/js/sim-worker.js` | Downloads the WASM sim once and runs it in up to 4 Web Workers |
 | `web/js/upgrades.js` | Picks upgrade candidates per slot and reads the sim results |
+| `web/js/wcl.js`, `web/js/wcl-queries.js` | Warcraft Logs import: through the Worker, or with the viewer's own sign-in |
+| `worker/` | Cloudflare Worker that loads public Warcraft Logs reports with no sign-in ([worker/README.md](worker/README.md)) |
 | `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |
 | `scripts/precompute-upgrades.mjs` | Ranks gear per rotation for the upgrades section (`web/sim/upgrades.json`) |
 
 Sim by [WoWSims](https://github.com/wowsims/forever) (MIT).
 
-## Warcraft Logs client
+## Warcraft Logs import
 
-Link import needs a Warcraft Logs API client registered to this site, once:
+Public reports load with no sign-in through a small Cloudflare Worker in `worker/` that holds this site's own
+Warcraft Logs client. It only runs the page's own queries, caches answers, and rate-limits each IP. Setup and the
+GitHub secrets it needs are in [worker/README.md](worker/README.md); without them the deploy skips the Worker and
+the page falls back to sign-in.
+
+Private reports need the viewer to sign in, which needs a public Warcraft Logs API client registered to this site, once:
 
 1. Signed in on forever.warcraftlogs.com, open your profile's API clients page and create a client.
 2. Name it (for example "Warrior DPS Analyzer"), set the redirect URL to `https://dogshep.github.io/warrior-dps-analyzer/`, and tick **Public client**.
@@ -92,6 +111,12 @@ Link import needs a Warcraft Logs API client registered to this site, once:
 For a local copy, add `http://localhost:8000/` as a second redirect URL, or paste your own client id under "Warcraft Logs settings" on the page.
 
 `node tests/wcl_mock.mjs tests/fixture-WoWCombatLog.txt` turns the sample log into Warcraft Logs API responses, for testing the import offline.
+
+## Security
+
+The page sets a strict Content-Security-Policy (scripts and workers from this site only, network calls only to
+Warcraft Logs and the Worker), escapes everything it shows from a log, checks the OAuth `state` on sign-in, and caps
+log size and sim length. The deploy builds wowsims in a job with no secrets, as described above.
 
 ## In-game addon
 
