@@ -40,17 +40,28 @@ export function craftedIds(upgrades) {
 // Crafting professions with gear recipes: Blacksmithing, Leatherworking, Tailoring, Engineering.
 export const PROFESSIONS = [164, 165, 197, 202];
 
+const quantityOf = a => Math.max(1, a.quantity || 1);
+
+// Groups an auction list by item: Map id -> [[price per item, quantity], …] for the wanted ids. unitOf(auction)
+// gives the price per item in copper, or 0 for a listing that doesn't count.
+function listingsByItem(auctions, wanted, unitOf) {
+  const want = new Set(wanted);
+  const out = new Map();
+  for (const a of auctions || []) {
+    const id = a.item?.id;
+    const unit = unitOf(a);
+    if (!want.has(id) || !(unit > 0)) continue;
+    if (!out.has(id)) out.set(id, []);
+    out.get(id).push([unit, quantityOf(a)]);
+  }
+  return out;
+}
+
 // A commodities list -> { reagentId: [[unitPrice, quantity], …] cheapest first } for the wanted reagents.
 export function ladders(commodities, wanted) {
-  const want = new Set(wanted);
+  const byItem = listingsByItem(commodities.auctions, wanted, a => a.unit_price || (a.buyout ? a.buyout / quantityOf(a) : 0));
   const out = {};
-  for (const a of commodities.auctions || []) {
-    const id = a.item?.id;
-    const unit = a.unit_price || (a.buyout ? a.buyout / Math.max(1, a.quantity || 1) : 0);
-    if (!want.has(id) || !(unit > 0)) continue;
-    (out[id] ??= []).push([unit, Math.max(1, a.quantity || 1)]);
-  }
-  for (const l of Object.values(out)) l.sort((x, y) => x[0] - y[0]);
+  for (const [id, list] of byItem) out[id] = list.sort((x, y) => x[0] - y[0]);
   return out;
 }
 
@@ -79,16 +90,7 @@ export function materialsCost(recipe, lad) {
 // One house's auctions -> { id: [lowest, median, listed] } for the wanted items. Prices are buyout per item, in
 // copper; bid-only auctions don't count.
 export function summarize(house, wanted) {
-  const want = new Set(wanted);
-  const prices = new Map();
-  for (const a of house.auctions || []) {
-    const id = a.item?.id;
-    if (!want.has(id) || !(a.buyout > 0)) continue;
-    const per = a.buyout / Math.max(1, a.quantity || 1);
-    const n = Math.max(1, a.quantity || 1);
-    if (!prices.has(id)) prices.set(id, []);
-    prices.get(id).push([per, n]);
-  }
+  const prices = listingsByItem(house.auctions, wanted, a => (a.buyout > 0 ? a.buyout / quantityOf(a) : 0));
   const out = {};
   for (const [id, list] of prices) {
     list.sort((x, y) => x[0] - y[0]);
@@ -146,6 +148,26 @@ async function findRecipes(auth, wanted, names) {
   return { recipes, reagents };
 }
 
+// One house: item prices, plus the cost of each recipe's materials from its commodities list when that loads.
+export async function priceHouse(auth, region, path, wanted, found, reagentIds, label) {
+  const { json, modified } = await getJson(auth, region, path, 'dynamic');
+  const items = summarize(json, wanted);
+  let lad = {};
+  if (reagentIds.length) {
+    try { lad = ladders((await getJson(auth, region, `${path}/commodities`, 'dynamic')).json, reagentIds); } catch (e) { console.warn(`${label} materials: ${e.message}`); }
+  }
+  let priced = 0;
+  for (const [craftedId, recipe] of Object.entries(found.recipes)) {
+    if (!Object.keys(lad).length) break;
+    const [cost, unpriced] = materialsCost(recipe, lad);
+    if (unpriced === recipe.length) continue;
+    const row = items[craftedId] || [0, 0, 0];
+    items[craftedId] = [...row.slice(0, 3), cost, unpriced];
+    priced++;
+  }
+  return { items, modified, priced };
+}
+
 async function main() {
   const [upgradesPath, namesPath, outPath] = process.argv.slice(2);
   const { BNET_CLIENT_ID: id, BNET_CLIENT_SECRET: secret } = process.env;
@@ -163,34 +185,16 @@ async function main() {
   const reagentIds = Object.keys(found.reagents).map(Number);
   const out = { updated: new Date().toISOString(), source: 'Blizzard Game Data API (WoW Forever)', items: wanted.length, ...found, houses: {} };
   let ok = 0, failed = 0;
-  for (const region of REGIONS) {
-    for (const [market, m] of Object.entries(MARKETS)) {
-      for (const side of ['alliance', 'horde']) {
-        const path = `ruleset/${m.ruleset}/auctions/${m[side]}`;
-        try {
-          const { json, modified } = await getJson(auth, region, path, 'dynamic');
-          const items = summarize(json, wanted);
-          let lad = {};
-          if (reagentIds.length) {
-            try { lad = ladders((await getJson(auth, region, `${path}/commodities`, 'dynamic')).json, reagentIds); } catch (e) { console.warn(`${region} ${market} ${side} materials: ${e.message}`); }
-          }
-          let priced = 0;
-          for (const [craftedId, recipe] of Object.entries(found.recipes)) {
-            if (!Object.keys(lad).length) break;
-            const [cost, unpriced] = materialsCost(recipe, lad);
-            if (unpriced === recipe.length) continue;
-            const row = items[craftedId] || [0, 0, 0];
-            items[craftedId] = [...row.slice(0, 3), cost, unpriced];
-            priced++;
-          }
-          out.houses[`${region}-${market}-${side}`] = { updated: modified || out.updated, items };
-          ok++;
-          console.log(`${region} ${market} ${side}: ${Object.values(items).filter(r => r[2]).length} of ${wanted.length} crafted items listed, materials priced for ${priced}`);
-        } catch (e) {
-          failed++;
-          console.warn(`${region} ${market} ${side}: ${e.message}`);
-        }
-      }
+  const houses = REGIONS.flatMap(region => Object.entries(MARKETS).flatMap(([market, m]) => ['alliance', 'horde'].map(side => ({ region, market, side, path: `ruleset/${m.ruleset}/auctions/${m[side]}` }))));
+  for (const { region, market, side, path } of houses) {
+    try {
+      const { items, modified, priced } = await priceHouse(auth, region, path, wanted, found, reagentIds, `${region} ${market} ${side}`);
+      out.houses[`${region}-${market}-${side}`] = { updated: modified || out.updated, items };
+      ok++;
+      console.log(`${region} ${market} ${side}: ${Object.values(items).filter(r => r[2]).length} of ${wanted.length} crafted items listed, materials priced for ${priced}`);
+    } catch (e) {
+      failed++;
+      console.warn(`${region} ${market} ${side}: ${e.message}`);
     }
   }
   if (!ok) throw new Error('No auction house answered.');
@@ -199,5 +203,5 @@ async function main() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(e => { console.error(e.message); process.exit(1); });
+  main().catch(e => { console.error(e.stack || e.message); process.exit(1); });
 }

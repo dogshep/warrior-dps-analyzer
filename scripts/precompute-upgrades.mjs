@@ -16,24 +16,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { gunzipSync } from 'node:zlib';
 import { DEFAULT_TALENTS, consumesFor, DEFAULT_TARGET } from '../web/js/analyze.js';
-import { SLOT_POOLS, poolFor } from '../web/js/upgrades.js';
+import { SLOT_POOLS, PAIR, poolFor } from '../web/js/upgrades.js';
 import { HELD_ITEMS, opensOn } from './availability.mjs';
+import { loadDpsSim } from './lib/node-sim.mjs';
 
-async function loadSim(simDir) {
-  createRequire(import.meta.url)(new URL('wasm_exec.js', simDir).pathname);
-  const wasm = gunzipSync(readFileSync(new URL('lib.wasm.gz', simDir)));
-  await new Promise(res => { globalThis.wasmready = res; const go = new Go(); WebAssembly.instantiate(wasm, go.importObject).then(r => go.run(r.instance)); });
-  return req => {
-    const out = JSON.parse(globalThis.raidSimJson(JSON.stringify(req)));
-    if (out.error?.message) throw new Error(out.error.message.split('\n')[0]);
-    return out.raidMetrics.parties[0].players[0].dps.avg;
-  };
-}
-
+const round = x => Math.round(x * 10) / 10;
 
 // A pool of sim threads; sim(req) resolves to the DPS.
 async function pool(simDir, n) {
@@ -181,8 +170,8 @@ async function main() {
   const ofKind = (scored, k, side) => scored.filter(x => kinds.get(x.it.id).includes(k) && [0, side].includes(factionOf(x.it)));
   const candidates = raw.items.filter(usable);
   const opens = new Map(candidates.map(it => [it.id, opensOn(it)]));
-  const later = candidates.filter(it => opens.get(it.id));
-  console.log(`${later.length} candidates open later in Forever: ${later.map(it => `${it.name} (${opens.get(it.id)})`).join(', ')}`);
+  const openLater = candidates.filter(it => opens.get(it.id));
+  console.log(`${openLater.length} candidates open later in Forever: ${openLater.map(it => `${it.name} (${opens.get(it.id)})`).join(', ')}`);
   const t0 = Date.now();
   const { sim, close } = await pool(simDir, threads);
   let sims = 0;
@@ -214,11 +203,11 @@ async function main() {
     const slots = {};
     // All slots at once, so every thread stays busy.
     await Promise.all(Object.entries(SLOT_POOLS).map(async ([key, slot]) => {
-      const pool = candidates.filter(it => poolFor(it, preset).includes(key));
-      if (!pool.length) return;
+      const slotPool = candidates.filter(it => poolFor(it, preset).includes(key));
+      if (!slotPool.length) return;
       const refItem = byId.get(ref[slot]?.id);
       const refEp = refItem?.scalingOptions?.['0'] ? ep(refItem, slot) : 0;
-      const scored = pool.map(it => ({ it, val: ep(it, slot) - refEp, simmed: 0 })).sort((a, b) => b.val - a.val);
+      const scored = slotPool.map(it => ({ it, val: ep(it, slot) - refEp, simmed: 0 })).sort((a, b) => b.val - a.val);
       const pick = new Set();
       for (const k of KINDS) for (const side of [1, 2]) {
         const inKind = ofKind(scored, k, side);
@@ -226,7 +215,7 @@ async function main() {
         for (const x of inKind.filter(y => special(y.it)).slice(0, SIM_TOP)) pick.add(x);
       }
       // The other ring, trinket or weapon in the reference gear: a unique item can't be worn twice.
-      const pair = { 10: 11, 12: 13, 14: 15 }[slot];
+      const pair = PAIR[slot] > slot ? PAIR[slot] : undefined; // the first of each pair of slots has a partner after it
       await Promise.all([...pick].map(async x => {
         let at = slot;
         if (pair !== undefined && ref[pair]?.id === x.it.id && x.it.unique) at = pair;
@@ -243,8 +232,8 @@ async function main() {
       // [id, DPS change from the reference item, 1 if simmed else 0 (priced by stat weights)], best first.
       slots[key] = scored.map(x => [x.it.id, round(x.val), x.simmed]);
       const trusted = scored.filter(y => slot < 14 || y.simmed);
-      for (const k of KINDS) for (const side of [1, 2]) for (const later of [false, true]) {
-        for (const x of ofKind(trusted, k, side).filter(y => !!opens.get(y.it.id) === later).slice(0, KEEP_TOP)) {
+      for (const k of KINDS) for (const side of [1, 2]) for (const isLater of [false, true]) {
+        for (const x of ofKind(trusted, k, side).filter(y => !!opens.get(y.it.id) === isLater).slice(0, KEEP_TOP)) {
           // Order as in web/js/fields.js SRC.
           const meta = [sourceText(db, x.it), factionOf(x.it), x.it.phase || 1, kinds.get(x.it.id)];
           if (opens.get(x.it.id)) meta.push(opens.get(x.it.id));
@@ -252,7 +241,7 @@ async function main() {
         }
       }
       const best = scored[0];
-      console.log(`${preset} ${key}: ${pool.length} items, simmed ${pick.size}, best ${best.it.name} (${best.val >= 0 ? '+' : ''}${round(best.val)}${best.simmed ? ', simmed' : ''})`);
+      console.log(`${preset} ${key}: ${slotPool.length} items, simmed ${pick.size}, best ${best.it.name} (${best.val >= 0 ? '+' : ''}${round(best.val)}${best.simmed ? ', simmed' : ''})`);
     }));
     out.presets[preset] = { ref: `prebis_${preset}`, baseDps: round(base), weights: Object.fromEntries(Object.entries(weights).map(([k, v]) => [k, Math.round(v * 1000) / 1000])), slots };
   }
@@ -264,11 +253,10 @@ async function main() {
 }
 
 export { sourceText, factionOf, kindsOf, usable, special };
-const round = x => Math.round(x * 10) / 10;
 
 // Worker thread: sims the requests it is sent.
 if (!isMainThread) {
-  const run = await loadSim(new URL(workerData.simDir));
+  const run = await loadDpsSim(new URL(workerData.simDir));
   parentPort.on('message', ({ id, req }) => {
     try { parentPort.postMessage({ id, dps: run(req) }); } catch (e) { parentPort.postMessage({ id, error: String(e.message || e) }); }
   });

@@ -37,12 +37,7 @@ cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" "$OUT/wasm_exec.js" 2>/dev/null || c
 cp ui/specs/warrior/dps/apls/*.json "$OUT/apls/"
 cp ui/specs/warrior/dps/gear_sets/*.json "$OUT/gear_sets/"
 python3 -I "$ROOT/scripts/make_names.py" assets/database/db.json "$OUT/names.json"
-python3 -I - "$OUT/version.json" <<PY
-import json,subprocess,sys,datetime
-sha=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
-date=subprocess.check_output(["git","log","-1","--format=%cI"],text=True).strip()
-json.dump({"repo":"wowsims/forever","commit":sha,"commitDate":date,"builtAt":datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")},open(sys.argv[1],"w"),indent=1)
-PY
+python3 -I "$ROOT/scripts/make_version.py" "$OUT/version.json"
 # The ranked item list behind "Gear upgrades" (about 14 minutes on 4 cores). SKIP_UPGRADES=1 leaves it out.
 if [ -z "${SKIP_UPGRADES:-}" ]; then
   node "$ROOT/scripts/precompute-upgrades.mjs" assets/database/db.json "$OUT"

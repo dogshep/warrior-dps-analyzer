@@ -1,8 +1,7 @@
 // Runs the analysis on saved Warcraft Logs API responses: {report: <report query response>, events: <fight query response>}.
 // Usage: node tests/run_wcl.mjs saved.json [iterations]
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { gunzipSync } from 'node:zlib';
+import { loadSim } from '../scripts/lib/node-sim.mjs';
 import { loadReport, loadFight } from '../web/js/wcl.js';
 import { aplSpellNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes } from '../web/js/analyze.js';
 
@@ -35,13 +34,7 @@ console.log(`${w.name} ${fight.name}: ${((fight.end - fight.start) / 1000).toFix
 console.log('abilities:', a.abilities.slice(0, 14).map(x => `${x.name}:${x.casts}/${Math.round(x.damage)}`).join(' '));
 console.log('gear:', a.combatant?.items.map(i => `${names.items[i.id]?.[0] || i.id}${i.enchant ? '+' + i.enchant : ''}`).join(', '));
 
-require: {
-  const require = createRequire(import.meta.url);
-  require(new URL('wasm_exec.js', root).pathname);
-}
-const wasm = gunzipSync(readFileSync(new URL('lib.wasm.gz', root)));
-await new Promise(res => { globalThis.wasmready = res; const go = new Go(); WebAssembly.instantiate(wasm, go.importObject).then(r => go.run(r.instance)); });
-const run = req => { const out = JSON.parse(globalThis.raidSimJson(JSON.stringify(req))); if (out.error?.message) throw new Error(out.error.message); return out; };
+const run = await loadSim(root);
 const t0 = Date.now();
 const sim = compareToSim(run(buildRequest(a, parser, names, apls, { iterations })), names, iterations);
 const cons = detectConsumes(a, parser, names);
