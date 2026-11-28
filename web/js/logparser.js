@@ -56,18 +56,9 @@ function parseTime(ts) {
   return Date.UTC(year, Number(m[1]) - 1, Number(m[2]), Number(m[4]), Number(m[5]), Number(m[6])) + frac * 1000;
 }
 
-const isFlag = t => t === 'nil' || t === '1' || t === '0';
-
-// Finds critical/glancing/crushing flags at the end of a damage suffix. Returns the index of `critical`.
-function critIndex(tok) {
-  for (let i = tok.length - 3; i >= 0; i--) {
-    if (isFlag(tok[i]) && isFlag(tok[i + 1]) && isFlag(tok[i + 2])) {
-      // A trailing isOffHand flag would make a 4-flag run; the crit flag is the first of the last 3 or 4.
-      if (i + 3 === tok.length || (i + 4 === tok.length && isFlag(tok[i + 3]))) return i;
-    }
-  }
-  return -1;
-}
+// Where the flags sit in a damage suffix, counted from the amount: amount, base, overkill, school, resisted,
+// blocked, absorbed, then critical, glancing, crushing and (on swings) isOffHand.
+const CRIT_AT = 7, GLANCING_AT = 8, OFFHAND_AT = 10;
 
 /**
  * What the analysis reads from a parsed log. LogParser builds it from a combat log and wcl.js builds it from a
@@ -234,10 +225,9 @@ export class LogParser {
     } else if (ev.endsWith('_DAMAGE') && !ev.endsWith('_DAMAGE_LANDED') && ev !== 'SPELL_PERIODIC_DAMAGE_SUPPORT') {
       const sufStart = prefixEnd + (hasAdv ? ADV_FIELDS : 0);
       const amount = Number(tok[sufStart]);
-      const ci = critIndex(tok);
-      const crit = ci >= 0 && tok[ci] === '1';
-      const glancing = ci >= 0 && tok[ci + 1] === '1';
-      const offhand = isSwing && ci >= 0 && tok[ci + 3] === '1';
+      const crit = tok[sufStart + CRIT_AT] === '1';
+      const glancing = tok[sufStart + GLANCING_AT] === '1';
+      const offhand = isSwing && tok[sufStart + OFFHAND_AT] === '1';
       if (!Number.isNaN(amount)) {
         p.damage.push({ t, spellId, name: spellName, amount, crit, glancing, offhand, dst, periodic: ev.includes('PERIODIC') });
         p.targets.set(dst, (p.targets.get(dst) || 0) + amount);

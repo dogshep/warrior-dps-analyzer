@@ -53,8 +53,7 @@ const advT = `${T},0000000000000000,500,1000,0,0,0,0,0,0,0,0,0,0,1,0,60`;
 const swing = (s, tail) => `${ts(s)}SWING_DAMAGE,${G},"W",0x511,0x0,${T},"Boss",0x10a48,0x0,${advT},${tail}`;
 const mk = lines => parseText(lines.join('\n'));
 
-// Crit flags: the last three flags are critical, glancing, crushing.
-// (A swing with a trailing isOffHand flag is not covered: critIndex reads the last 3 flags first, see the review notes.)
+// Crit flags: critical, glancing, crushing, then isOffHand on swings.
 const spell = (s, tail) => `${ts(s)}SPELL_DAMAGE,${G},"W",0x511,0x0,${T},"Boss",0x10a48,0x0,23894,"Bloodthirst",0x1,${advT},${tail}`;
 let p = mk([
   `${ts(0)}COMBAT_LOG_VERSION,9,ADVANCED_LOG_ENABLED,1,BUILD_VERSION,1.60.1`,
@@ -66,6 +65,17 @@ const [d1, d2, d3] = p.players.get(G).damage;
 assert.deepEqual([d1.amount, d1.crit, d1.glancing], [100, false, false]);
 assert.deepEqual([d2.amount, d2.crit, d2.glancing], [200, true, false]);
 assert.deepEqual([d3.amount, d3.crit, d3.glancing], [300, false, true]);
+// Swings carry a 4th flag, isOffHand: it must not shift the others.
+p = mk([
+  `${ts(0)}COMBAT_LOG_VERSION,9,ADVANCED_LOG_ENABLED,1,BUILD_VERSION,1.60.1`,
+  swing(1, '100,100,-1,1,0,0,0,1,nil,nil,1'),
+  swing(2, '200,200,-1,1,0,0,0,nil,1,nil,nil'),
+  swing(3, '300,300,-1,1,0,0,0,nil,nil,nil,1'),
+]);
+const [s1, s2, s3] = p.players.get(G).damage;
+assert.deepEqual([s1.crit, s1.glancing, s1.offhand], [true, false, true]);
+assert.deepEqual([s2.crit, s2.glancing, s2.offhand], [false, true, false]);
+assert.deepEqual([s3.crit, s3.glancing, s3.offhand], [false, false, true]);
 assert.deepEqual([d1.name, d1.spellId, d1.dst], ['Bloodthirst', 23894, T]);
 assert.equal(p.names.get(T), 'Boss');
 assert.equal(p.players.get(G).targets.get(T), 600);
