@@ -14,7 +14,7 @@ export const SLOT_POOLS = { head: 0, neck: 1, shoulder: 2, back: 3, chest: 4, wr
 export const SLOT_KEY = ['head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet', 'ring', 'ring', 'trinket', 'trinket', 'mh', 'oh', 'ranged'];
 const ARMOR_KEY = [null, 'head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet', 'ring', 'trinket'];
 // The slot worn beside each paired slot: a unique item can't be in both.
-const PAIR = { 10: 11, 11: 10, 12: 13, 13: 12, 14: 15, 15: 14 };
+export const PAIR = { 10: 11, 11: 10, 12: 13, 13: 12, 14: 15, 15: 14 };
 
 // Which pools an item from wowsims' db.json belongs to for a rotation (build time only). Fury dual wields;
 // the two-hander and Arms rotations take a two-hand weapon and nothing in the off hand.

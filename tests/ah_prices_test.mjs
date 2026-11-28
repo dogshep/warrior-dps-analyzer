@@ -1,6 +1,6 @@
 // Unit checks for the auction house price summary and the page's price text. Usage: node tests/ah_prices_test.mjs
 import assert from 'node:assert/strict';
-import { summarize, craftedIds, MARKETS, ladders, buyCost, materialsCost } from '../scripts/ah-prices.mjs';
+import { summarize, craftedIds, MARKETS, ladders, buyCost, materialsCost, priceHouse } from '../scripts/ah-prices.mjs';
 import { priceFor, gold, houseKey, materialsList } from '../web/js/prices.js';
 
 // Only crafted items are wanted.
@@ -55,5 +55,30 @@ assert.deepEqual(priceFor(withMats, 'k', 7), { min: 300000, median: 500000, list
 assert.equal(priceFor(withMats, 'k', 8).listed, 0);
 assert.equal(materialsList(withMats, 7), '12 Thorium Bar, 1 Arcanite Bar');
 assert.equal(materialsList(withMats, 8), '');
+
+// One house end to end, with the API stubbed: item prices, then materials from the commodities list.
+const answers = {
+  'ruleset/1/auctions/2': { auctions: [{ item: { id: 7 }, buyout: 300000, quantity: 1 }] },
+  'ruleset/1/auctions/2/commodities': { auctions: [{ item: { id: 50 }, unit_price: 1000, quantity: 20 }] },
+};
+const realFetch = globalThis.fetch;
+globalThis.fetch = async url => {
+  const key = new URL(url).pathname.replace('/data/wow/', '');
+  return key in answers ? { ok: true, json: async () => answers[key], headers: { get: () => 'Sat, 28 Nov 2026 10:00:00 GMT' } } : { ok: false, status: 404 };
+};
+try {
+  const found = { recipes: { 7: [[50, 4]], 8: [[99, 1]] } };
+  const r = await priceHouse({}, 'us', 'ruleset/1/auctions/2', [7, 8], found, [50, 99], 'us test');
+  assert.equal(r.modified, 'Sat, 28 Nov 2026 10:00:00 GMT');
+  assert.deepEqual(r.items, { 7: [300000, 300000, 1, 4000, 0] });
+  assert.equal(r.priced, 1, 'recipe 8 has no priced reagent, so it gets no row');
+  // No commodities list: item prices still come back, without materials.
+  delete answers['ruleset/1/auctions/2/commodities'];
+  const r2 = await priceHouse({}, 'us', 'ruleset/1/auctions/2', [7], found, [50], 'us test');
+  assert.deepEqual(r2.items, { 7: [300000, 300000, 1] });
+  assert.equal(r2.priced, 0);
+  // The house itself failing rejects.
+  await assert.rejects(priceHouse({}, 'us', 'ruleset/9/auctions/9', [7], found, [], 'x'), /HTTP 404/);
+} finally { globalThis.fetch = realFetch; }
 
 console.log('ah prices: ok');

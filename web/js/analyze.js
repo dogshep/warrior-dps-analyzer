@@ -98,6 +98,8 @@ const TWO_HAND_CONSUMES = { ...DEFAULT_CONSUMES, mhImbueId: 12404, ohImbueId: 0 
 export const consumesFor = preset => (preset === 'fury' ? DEFAULT_CONSUMES : TWO_HAND_CONSUMES);
 const CONSUME_LABELS = { 13452: 'Elixir of the Mongoose', 12451: 'Juju Power', 12460: 'Juju Might', 20452: 'Smoked Desert Dumplings', 8410: 'R.O.I.D.S.', 13442: 'Mighty Rage Potion' };
 
+// The boss the sim fights: wowsims' default level 63 raid boss. stats[] is indexed by wowsims' Stat enum (39 entries);
+// the two non-zero entries, 320 at index 14 and 3731 at index 27, are copied from that default.
 export const DEFAULT_TARGET = { level: 63, stats: Array.from({ length: 39 }, (_, i) => (i === 14 ? 320 : i === 27 ? 3731 : 0)), minBaseDamage: 2601, damageSpread: 0.5, swingSpeed: 2, parryHaste: true, canCrush: true };
 
 const BUFF_RULES = [
@@ -123,6 +125,15 @@ const DEBUFF_RULES = [
   [/Thunderfury/, d => (d.thunderfury = true)],
   [/Annihilator|Armor Shatter/, d => (d.armorShatter = true)],
 ];
+
+// A target counts when it took at least this share of the damage.
+const TARGET_SHARE = 0.08;
+// A gap this long between attacks or casts is downtime, and the first GRACE of it is the normal pause between swings.
+const IDLE_GAP_MS = 2500;
+const IDLE_GRACE_MS = 2000;
+// A sim ability is a missed-casts tip when you cast it at least this many times fewer, and at least this share fewer.
+const MIN_MISSING_CASTS = 1.5;
+const MISSING_SHARE = 0.12;
 
 const inFight = (f, t) => t >= f.start && t <= f.end;
 
@@ -189,7 +200,7 @@ export function analyzeFight(parser, guid, fight, names) {
   for (const d of dmg) perTarget.set(d.dst, (perTarget.get(d.dst) || 0) + d.amount);
   const sortedTargets = [...perTarget.entries()].sort((a, b) => b[1] - a[1]);
   const mainTarget = sortedTargets[0]?.[0];
-  const countTargets = (m, tot) => Math.max(1, Math.min(5, [...m.values()].filter(v => v > tot * 0.08).length));
+  const countTargets = (m, tot) => Math.max(1, Math.min(5, [...m.values()].filter(v => v > tot * TARGET_SHARE).length));
   // For a run: the typical pull, by time spent, is what the sim fights.
   const targetCount = pulls ? Math.max(1, Math.min(5, Math.round(sum(pulls.map(pl => countTargets(pl.targets, pl.dmg) * (pl.end - pl.start))) / (dur * 1000))))
     : countTargets(perTarget, total);
@@ -213,8 +224,8 @@ export function analyzeFight(parser, guid, fight, names) {
   const windows = pulls || [{ start: fight.start, end: deathT ?? fight.end }];
   for (const w of windows) {
     let prev = w.start;
-    for (const t of activity) { if (t < w.start || t > w.end) continue; if (t - prev > 2500) idle += t - prev - 2000; prev = t; }
-    if (!pulls && w.end - prev > 2500) idle += w.end - prev - 2000;
+    for (const t of activity) { if (t < w.start || t > w.end) continue; if (t - prev > IDLE_GAP_MS) idle += t - prev - IDLE_GRACE_MS; prev = t; }
+    if (!pulls && w.end - prev > IDLE_GAP_MS) idle += w.end - prev - IDLE_GRACE_MS;
   }
 
   const combatant = parser.combatants.get(guid);
@@ -376,7 +387,7 @@ export function suggestions(a, sim, ideal, castable) {
       const mine = a.abilities.find(x => x.name === name);
       const myCasts = mine?.casts || 0;
       const missing = sc - myCasts;
-      if (missing < Math.max(1.5, sc * 0.12)) continue;
+      if (missing < Math.max(MIN_MISSING_CASTS, sc * MISSING_SHARE)) continue;
       const perCast = mine && mine.hits ? mine.damage / mine.hits : (simDmg.get(name) || 0) / sc;
       const gain = (missing * perCast) / a.dur;
       if (gain < 1) continue;
