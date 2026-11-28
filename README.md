@@ -98,6 +98,17 @@ for t in tests/*_test.mjs; do node "$t" || break; done     # unit tests (the dep
 
 `tests/make_fixture.mjs` writes the synthetic sample log in `tests/`. It plays a deliberately sloppy fury rotation and exists to smoke test the pipeline.
 
+### Sample report
+
+"Try a sample report" on the page (or a link ending in `#sample`) shows finished results for a made-up Fury warrior on Onyxia, without running the sim and without Warcraft Logs. `web/js/sample.js` fills the results page from `web/sample/sample-report.json`. Nobody real is in the log: the players are `Sample*` with placeholder ids.
+
+```sh
+node scripts/make-sample-log.mjs web/sample/sample-WoWCombatLog.txt   # the made-up log (boss health, Flurry, sloppy rotation)
+node scripts/make-sample.mjs 1000                                      # runs the real page on it in headless Chromium and saves the results
+```
+
+Rerun `make-sample.mjs` after changing the log, how results are shown, or the sim version; it needs a full `scripts/build-sim.sh` (with the upgrade list) and takes about two minutes. `tests/sample_test.mjs` checks the log still has what the sample is for and the snapshot has every part.
+
 ## Layout
 
 | Path | What |
