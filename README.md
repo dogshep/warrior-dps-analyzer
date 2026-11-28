@@ -6,7 +6,7 @@ It runs entirely in your browser:
 
 1. **Parses the log** (`WoWCombatLog-*.txt`): fights (boss encounters and trash pulls), your casts, damage, rage, buffs, deaths, and your gear and enchants from `COMBATANT_INFO`.
 2. **Sims your exact gear** with [wowsims/forever](https://github.com/wowsims/forever), compiled to WebAssembly, using the wowsims Fury, Fury 2H or Arms rotation, the fight's length and target count, and the buffs and consumables seen in the log.
-3. **Compares you to the sim.** For each ability it compares your casts to the sim's and prices the gap using your own damage per cast. It also checks cooldowns (Death Wish, Recklessness, Bloodrage, racials), Battle Shout uptime, rage capping, time spent not attacking, deaths, missing enchants and missing consumables.
+3. **Compares you to the sim.** For each ability it compares your casts to the sim's and prices the gap using your own damage per cast. It also checks cooldowns (Death Wish, Recklessness, Bloodrage, racials), Battle Shout uptime, rage use (capping, or Heroic Strike starving Bloodthirst and Whirlwind), the execute phase, time spent not attacking, deaths, missing enchants and missing consumables.
 4. **Ranks the suggestions** by estimated DPS gained.
 5. **Finds gear upgrades** on request: the best next item per slot and where it drops, is crafted or sold.
 
@@ -66,6 +66,7 @@ node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis i
 | `web/index.html`, `web/style.css`, `web/js/app.js` | The page |
 | `web/js/logparser.js` | Combat log parser |
 | `web/js/analyze.js` | Fight metrics, the wowsims request, sim comparison and suggestions |
+| `web/js/rage.js` | Rage read (Heroic Strike starving or overcapping) and the execute phase report |
 | `web/js/simpool.js`, `web/js/sim-worker.js` | Downloads the WASM sim once and runs it in up to 4 Web Workers |
 | `web/js/upgrades.js` | Picks upgrade candidates per slot and reads the sim results |
 | `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |

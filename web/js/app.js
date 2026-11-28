@@ -94,6 +94,7 @@ async function analyze() {
   renderStats(a, null);
   renderTables(a, names);
   renderCooldowns(a);
+  renderExecute(a);
   showProgress('Starting the sim…', 0);
   $('go').disabled = true;
   $('cancel').hidden = false;
@@ -153,6 +154,17 @@ function renderCooldowns(a) {
     (a.pullSpans ? 'On a dungeon run, "possible" counts one use on each pull of 20s or more (any pull for Bloodrage) that the cooldown was back for, so a fast group is not held against you.' : 'Talent, racial and potion cooldowns only show once the log has you using them.');
 }
 
+// Execute phase: DPS and casts per minute before and under 20% (single fights where the boss's health is known).
+function renderExecute(a) {
+  const x = a.execute;
+  $('exec').hidden = !x;
+  if (!x) return;
+  $('execSum').textContent = `Under 20% from ${mmss(x.start - a.fight.start)} for ${Math.round(x.sec)}s. Your DPS: ${fmt(x.dps[0])} before, ${fmt(x.dps[1])} under 20%.`;
+  const pm = v => (Math.round(v * 10) / 10).toFixed(1);
+  $('execTable').innerHTML = '<tr><th>Ability</th><th class="n">Per minute before 20%</th><th class="n">Per minute under 20%</th></tr>' +
+    x.rows.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${pm(r.perMin[0])}</td><td class="n">${pm(r.perMin[1])}</td></tr>`).join('');
+}
+
 function renderStats(a, s, ideal) {
   const cons = s && ideal ? ideal.simDps - s.simDps : null;
   const cells = [
@@ -162,6 +174,7 @@ function renderStats(a, s, ideal) {
     ...(cons !== null && cons > 2 ? [['More from full consumables', `+${fmt(cons)}`, 'gap']] : []),
     a.isRun ? ['In combat', `${Math.round(a.dur / 60)} of ${Math.round((a.fight.end - a.fight.start) / 60000)} min, ${a.pulls} pulls`] : ['Fight length', `${Math.round(a.dur)}s`],
     ['Rotation', a.preset.replace('_', ' ')],
+    ...(a.uptimes.flurry > 0 ? [['Flurry uptime', `${Math.round(a.uptimes.flurry * 100)}%`]] : []),
   ];
   $('stats').innerHTML = cells.map(([k, v, c]) => `<div class="stat ${c || ''}"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('');
 }
