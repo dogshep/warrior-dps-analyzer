@@ -11,7 +11,7 @@ import { SRC } from './fields.js';
 // Item pools, keyed by name, with the sim slot each is simmed in. Rings and trinkets share one pool for both slots.
 export const SLOT_POOLS = { head: 0, neck: 1, shoulder: 2, back: 3, chest: 4, wrist: 5, hands: 6, waist: 7, legs: 8, feet: 9, ring: 10, trinket: 12, mh: 14, oh: 15, ranged: 16 };
 // The pool for each sim slot (0 head ... 16 ranged).
-export const SLOT_KEY = ['head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet', 'ring', 'ring', 'trinket', 'trinket', 'mh', 'oh', 'ranged'];
+const SLOT_KEY = ['head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet', 'ring', 'ring', 'trinket', 'trinket', 'mh', 'oh', 'ranged'];
 const ARMOR_KEY = [null, 'head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet', 'ring', 'trinket'];
 // The slot worn beside each paired slot: a unique item can't be in both.
 export const PAIR = { 10: 11, 11: 10, 12: 13, 13: 12, 14: 15, 15: 14 };

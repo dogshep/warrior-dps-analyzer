@@ -2,8 +2,13 @@
 // app.js and upgrades-ui.js put the strings on the page.
 import { esc, fmt, mmss } from './format.js';
 import { houseKey, priceFor, materialsList, gold, age } from './prices.js';
-import { auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS } from './analyze.js';
-import { ITEM, SRC, KIND_CRAFTED } from './fields.js';
+import { auditEnchants, shortEnchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS } from './analyze.js';
+import { ITEM, SRC, isCrafted } from './fields.js';
+
+// 95% confidence margin of a sim result, in standard errors.
+const Z95 = 1.96;
+const MARKET_NAMES = { normal: 'Normal', pvp: 'PvP', rp: 'RP', rppvp: 'RP PvP' };
+const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
 
 // One row per cooldown: when it was up (orange), when it sat ready but unused (red stripes), and the pulls or
 // execute phase behind it.
@@ -51,7 +56,6 @@ export function statsHtml(a, s, ideal) {
   return cells.map(([k, v, c]) => `<div class="stat ${c || ''}"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('');
 }
 
-
 // What the listed play tips don't cover, so the group adds up to "Possible gain" exactly (using the rounded numbers
 // shown on the page).
 export function restLine(play, gap) {
@@ -61,19 +65,17 @@ export function restLine(play, gap) {
   return `<li><span class="t">Everything else</span><span class="g">≈ +${fmt(rest)} DPS</span><div class="d">Small differences from the sim that are too small to list or have no DPS number (like Battle Shout uptime), plus a little sim randomness. With this line, the play tips add up to your possible gain.</div></li>`;
 }
 
-
 // Play tips first (they share "Possible gain"), then gear and consumables (on top of it).
 export function tipsHtml(list, gap) {
   const links = t => t.links ? `<div class="src">Guide: ${t.links.map(([label, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`).join(' · ')}</div>` : '';
   const li = (t, i) => `<li${i ? '' : ' value="1"'}><span class="t">${esc(t.title)}</span>${t.gain ? `<span class="g">≈ +${fmt(t.gain)} DPS</span>` : ''}<div class="d">${esc(t.detail)}</div>${links(t)}</li>`;
   const play = list.filter(t => t.group !== 'gear').slice(0, 8), gear = list.filter(t => t.group === 'gear');
   const head = (title, note) => `<li class="grp"><b>${esc(title)}</b>${note ? `<span>${esc(note)}</span>` : ''}</li>`;
-  return     head('Play', gap > 0 ? `These share your possible gain (+${fmt(gap)}). Each is an estimate, and they overlap.` : '') +
+  return head('Play', gap > 0 ? `These share your possible gain (+${fmt(gap)}). Each is an estimate, and they overlap.` : '') +
     (play.length ? play.map(li).join('') : '<li>Nothing big stands out. Nice work. Push for longer uptime and cleaner cooldown timing.</li>') +
     restLine(play, gap) +
     (gear.length ? head('Gear and consumables', 'On top of your possible gain.') + gear.map(li).join('') : '');
 }
-
 
 export function tablesHtml(a, names) {
   const abil = '<tr><th>Ability</th><th class="n">Casts</th><th class="n">Damage</th><th class="n">%</th><th class="n">Crit</th></tr>' +
@@ -82,7 +84,7 @@ export function tablesHtml(a, names) {
   const audit = new Map(auditEnchants(gear, names).map(e => [e.slot, e]));
   const enchCell = (it, si) => {
     const e = audit.get(si);
-    const nm = it.enchant ? esc(enchantName(names, it.enchant, si).replace(/^Enchant [\w\s-]+? - /, '')) : '';
+    const nm = it.enchant ? esc(shortEnchantName(names, it.enchant, si)) : '';
     if (!e || e.ok) return nm;
     return `<span class="warn">${nm || 'None'}</span>`;
   };
@@ -109,13 +111,11 @@ export function underCapHtml(underCap, names) {
   return list.length ? `<p class="hint">Left out (would drop you under the hit cap): ${esc(list.join('; '))}.</p>` : '';
 }
 
-
 // Price line for a crafted upgrade, from the chosen auction house.
 export function priceLine(table, prices, key, id) {
-  if (!String(table.items[id]?.[SRC.KINDS] || '').includes(KIND_CRAFTED)) return '';
+  if (!isCrafted(table.items[id])) return '';
   const p = priceFor(prices, key, id);
-  if (p === undefined) return '';
-  if (p === null) return '';
+  if (p === undefined || p === null) return '';
   const ah = p.listed ? `<div class="price" title="${p.listed} listed, median ${gold(p.median)}">AH from ${gold(p.min)}</div>` : '';
   if (p.materials === undefined) return ah;
   const list = materialsList(prices, id);
@@ -123,15 +123,12 @@ export function priceLine(table, prices, key, id) {
   return ah + `<div class="price" title="${esc(list ? `Materials: ${list}` : '')}">Materials ${p.unpriced ? 'at least' : 'about'} ${gold(p.materials)}${missing}</div>`;
 }
 
-
 // m: {rows, gear, names, cands, setCost, underCap, prices, faction, table (upgrades.json), region, market}
 export function upgradesHtml(m) {
   const { rows, gear, names, cands, setCost = new Map(), underCap = [], prices = null, faction, table: upgradeTable, region, market } = m;
-  const MARKET_NAMES = { normal: 'Normal', pvp: 'PvP', rp: 'RP', rppvp: 'RP PvP' };
   const key = houseKey(region, market, faction);
   const house = prices?.houses?.[key];
-  const crafted = rows.some(r => String(upgradeTable.items[r.id]?.[SRC.KINDS] || '').includes(KIND_CRAFTED));
-  const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
+  const crafted = rows.some(r => isCrafted(upgradeTable.items[r.id]));
   const tags = id => [...(upgradeTable.items[id]?.[SRC.KINDS] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
   const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[ITEM.NAME] || `#${id}`)}</a>`;
   // First source, then "+N more" (a small fold) for the rest.
@@ -145,9 +142,9 @@ export function upgradesHtml(m) {
     ? '<table><tr><th>Slot</th><th>Upgrade</th><th class="n">DPS</th><th>Where to get it</th></tr>' + rows.map(r => {
         const cur = gear[r.slot]?.id;
         const cost = setCost.get(r.slot);
-        const sets = (r.sets?.lost || []).map(x => `<div class="warn small">Breaks ${esc(x)}${cost ? `, worth about ${fmt(Math.max(0, cost.dps))} DPS (±${fmt(1.96 * cost.err)}). The gain already counts that loss.` : '. The gain already counts that loss.'}</div>`).join('') +
+        const sets = (r.sets?.lost || []).map(x => `<div class="warn small">Breaks ${esc(x)}${cost ? `, worth about ${fmt(Math.max(0, cost.dps))} DPS (±${fmt(Z95 * cost.err)}). The gain already counts that loss.` : '. The gain already counts that loss.'}</div>`).join('') +
           (r.sets?.gained || []).map(x => `<div class="src">Completes ${esc(x)}</div>`).join('');
-        return `<tr><td${cur ? ` title="Replaces ${esc(names.items[cur]?.[ITEM.NAME] || `#${cur}`)}"` : ''}>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${where(r.id)}${priceLine(upgradeTable, prices, key, r.id)}</td></tr>`;
+        return `<tr><td${cur ? ` title="Replaces ${esc(names.items[cur]?.[ITEM.NAME] || `#${cur}`)}"` : ''}>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(Z95 * r.err)}</span>${r.gain < Z95 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${where(r.id)}${priceLine(upgradeTable, prices, key, r.id)}</td></tr>`;
       }).join('') + '</table>'
     : '<p>None of the likely upgrades beat your current gear in the sim.</p>') +
     (none.length ? `<p class="hint">No upgrade found: ${esc(none.join(', '))}.</p>` : '') +

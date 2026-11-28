@@ -37,7 +37,7 @@ const prewarm = () => pool.warm().catch(() => {});
 
 // The progress bar under "Try this next run": label plus a 0..1 fill.
 function showProgress(label, done) {
-  $("tips").innerHTML = `<li class="d prog">${esc(label)}<div class="bar"><span style="width:${Math.round(done * 100)}%"></span></div></li>`;
+  $('tips').innerHTML = `<li class="d prog">${esc(label)}<div class="bar"><span style="width:${Math.round(done * 100)}%"></span></div></li>`;
 }
 
 // The loaded source: a parsed log file, or a Warcraft Logs report whose fights load on demand.
@@ -46,6 +46,7 @@ let parser = null, report = null;
 let last = null;
 // The fights listed in the Fight picker (for the chosen warrior), in the same order.
 let fights = [];
+const { resetUpgrades } = initUpgrades({ data, cancelSim, getLast: () => last });
 
 // Shows a message in a status element: kind 'warn' (red) or 'hint' (plain). Used instead of alert().
 function showStatus(el, msg, kind = 'warn') {
@@ -69,6 +70,7 @@ async function load(file) {
     showStatus($('loadStatus'), `Could not read this file: ${e.message || e}`);
     return;
   }
+  $('progress').hidden = true;
   $('progress').hidden = true;
   const war = parser.warriors();
   if (!war.length) { showStatus($('loadStatus'), 'No warriors found in this log.'); return; }
@@ -240,6 +242,5 @@ $('sampleReal').onclick = () => sampleLog().then(load).then(() => $('pickers').s
 // A link to the page with #sample opens the sample right away.
 if (location.hash === '#sample') trySample();
 wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
-const { resetUpgrades } = initUpgrades({ data, cancelSim, getLast: () => last });
 $('go').onclick = analyze;
 $('cancel').onclick = cancelSim;

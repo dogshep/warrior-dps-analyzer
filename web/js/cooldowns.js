@@ -3,8 +3,10 @@
 // Dungeon runs get a per-pull view, because how fast the group pulls decides whether a cooldown is back.
 
 import { mmss, joinList } from './format.js';
+import { PULL_GAP_MS } from './logparser.js';
 
-// cd and dur in seconds, as in wowsims/forever's spell data (Sweeping Strikes lasts 20s there, 5 charges). `value` is the rough share of your damage the cooldown adds while it is up.
+// cd and dur in seconds, as in wowsims/forever's spell data (Sweeping Strikes lasts 20s there, 5 charges).
+// `value` is the rough share of your damage the cooldown adds while it is up.
 // `always`: every warrior has it, so it counts even when never pressed. Others count only once seen in the log
 // (talents, racials and potions the log cannot otherwise confirm).
 const COOLDOWNS = [
@@ -67,7 +69,7 @@ export function cooldownReport(p, fight, { pulls, dps, dur, executeStart, execut
       const minPull = cd.minPull ?? BIG_PULL_S;
       row.pulls = pulls.map((pl, i) => {
         // A use in the 15s before a pull (after the last one ended) counts for that pull: Bloodrage on the way in.
-        const from = Math.max(pl.start - 15000, i ? pulls[i - 1].end : -Infinity);
+        const from = Math.max(pl.start - PULL_GAP_MS, i ? pulls[i - 1].end : -Infinity);
         const before = uses.filter(t => t < from).pop();
         const readyAt = Math.max(avail, before !== undefined ? before + cdMs : -Infinity);
         const used = uses.find(t => t >= from && t <= pl.end);

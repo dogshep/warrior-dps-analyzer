@@ -2,6 +2,7 @@
 // Works in the browser (streaming a File) and in Node (from a string), and keeps only what the analyzer needs.
 
 const SPELL_PREFIX = ['SPELL_', 'RANGE_'];
+const AURA_PREFIX = 'SPELL_AURA_';
 // No damage from the warrior for this long ends a pull (dungeon runs are one long fight in the log).
 export const PULL_GAP_MS = 15000;
 const ADV_FIELDS = 17;
@@ -83,7 +84,6 @@ export class LogParser {
     this.encounters = []; // {name, id, start, end, success}
     this.openEncounter = null;
     this.players = new Map(); // guid -> per-player event store
-    this.unitDeaths = [];
     this.targetHp = new Map(); // unit guid -> [time, health fraction]
     this.debuffs = []; // auras on non-player targets
     this.fightCache = new Map(); // player guid -> fights()
@@ -144,9 +144,9 @@ export class LogParser {
   onCombatant(t, payload) {
     const tok = splitTop(payload);
     const guid = tok[1];
-    const groups = tok.map((x, i) => [i, x]).filter(([, x]) => x[0] === '[' || x[0] === '(');
+    const groups = tok.filter(x => x[0] === '[' || x[0] === '(');
     let items = null, auras = [], talents = null;
-    for (const [, g] of groups) {
+    for (const g of groups) {
       const v = parseGroup(g);
       if (!Array.isArray(v)) continue;
       // The equipment list: an array of tuples whose first entry is an item id and second its item level.
@@ -175,14 +175,13 @@ export class LogParser {
     if (dst && dst !== '0000000000000000' && dstName !== 'nil') this.names.set(dst, dstName);
 
     if (ev === 'UNIT_DIED') {
-      this.unitDeaths.push({ t, guid: dst });
       if (this.players.has(dst)) this.players.get(dst).deaths.push(t);
       return;
     }
 
     const isSwing = ev.startsWith('SWING_');
     const isSpell = SPELL_PREFIX.some(p => ev.startsWith(p));
-    const prefixEnd = isSwing ? 9 : isSpell ? 12 : 9;
+    const prefixEnd = isSpell ? 12 : 9;
     const spellId = isSpell ? Number(tok[9]) : 0;
     const spellName = isSpell ? unq(tok[10]) : 'Melee';
 
@@ -214,7 +213,7 @@ export class LogParser {
     if (!srcIsPlayer) {
       // Auras applied to players by others still matter (buffs).
       if (dst && dst.startsWith('Player-') && /^SPELL_AURA_(APPLIED|REMOVED|REFRESH)/.test(ev)) {
-        this.player(dst).auras.push({ t, ev: ev.slice(11), spellId, name: spellName, src });
+        this.player(dst).auras.push({ t, ev: ev.slice(AURA_PREFIX.length), spellId, name: spellName, src });
       }
       return;
     }
@@ -237,11 +236,9 @@ export class LogParser {
       const missType = tok[prefixEnd];
       p.misses.push({ t, spellId, name: spellName, type: unq(missType), dst });
     } else if (/^SPELL_AURA_(APPLIED|REMOVED|REFRESH|APPLIED_DOSE)/.test(ev)) {
-      if (dst === src) p.auras.push({ t, ev: ev.slice(11), spellId, name: spellName, src });
-      else if (dst && dst.startsWith('Player-')) this.player(dst).auras.push({ t, ev: ev.slice(11), spellId, name: spellName, src });
-      else {
-        this.debuffs.push({ t, ev: ev.slice(11), spellId, name: spellName, src, dst });
-      }
+      if (dst === src) p.auras.push({ t, ev: ev.slice(AURA_PREFIX.length), spellId, name: spellName, src });
+      else if (dst && dst.startsWith('Player-')) this.player(dst).auras.push({ t, ev: ev.slice(AURA_PREFIX.length), spellId, name: spellName, src });
+      else this.debuffs.push({ t, ev: ev.slice(AURA_PREFIX.length), spellId, name: spellName, src, dst });
     }
   }
 

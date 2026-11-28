@@ -67,7 +67,7 @@ const SIM_TOP = 4;
 // open later in Forever get their own quota, so they never crowd out what can be had now.
 const KEEP_TOP = 8;
 
-function sourceText(db, it) {
+export function sourceText(db, it) {
   const zone = id => db.zoneName.get(id) || '';
   const out = [];
   const drops = new Map(); // zone -> boss names
@@ -91,7 +91,7 @@ function sourceText(db, it) {
 // neutral source). PvP rank items say their side in the name.
 const ALLIANCE_PVP = /^(Grand Marshal|Field Marshal|Marshal|Commander|Lieutenant Commander|Knight-Captain|Knight-Lieutenant|Stormpike)\b/;
 const HORDE_PVP = /^(High Warlord|Warlord|General|Lieutenant General|Champion|Legionnaire|Blood Guard|Frostwolf)\b/;
-function factionOf(it) {
+export function factionOf(it) {
   if (ALLIANCE_PVP.test(it.name)) return 1;
   if (HORDE_PVP.test(it.name)) return 2;
   const f = new Set((it.sources || []).map(s => (s.quest || s.soldBy)?.faction ?? s.rep?.factionId ?? 0));
@@ -100,7 +100,7 @@ function factionOf(it) {
 
 // The kinds of source an item has (see KINDS). A PvP reward is only 'p', though rank vendors sell it. A quest that
 // starts in a raid counts as a raid.
-function kindsOf(it, raidZones) {
+export function kindsOf(it, raidZones) {
   const src = it.sources || [];
   if (src.some(s => s.pvp)) return 'p';
   const k = new Set();
@@ -118,7 +118,7 @@ function kindsOf(it, raidZones) {
 // says how to get. Random-suffix items are skipped (their stats depend on the suffix). Only phase 1 items: wowsims
 // marks an item phase 1 when it can be had in Forever now, and Unknown (2) when it can't yet: drops from every raid
 // but Onyxia's Lair and Mount Hyjal, rewards of events Forever does not hold, and anything that needs those.
-function usable(it) {
+export function usable(it) {
   const so = it.scalingOptions?.['0'] || {};
   if (it.phase !== 1 || HELD_ITEMS.has(it.id)) return false;
   if ((it.quality || 0) < 3 || (so.ilvl || 0) < 55 || !(it.sources || []).length || it.randomSuffixOptions) return false;
@@ -130,7 +130,7 @@ function usable(it) {
   return true;
 }
 
-const special = it => !!(it.itemEffects?.length || (it.pseudoStats || []).some(Boolean));
+export const special = it => !!(it.itemEffects?.length || (it.pseudoStats || []).some(Boolean));
 
 function baseRequest(preset, apl, items, iterations, bonusStats) {
   return {
@@ -251,8 +251,6 @@ async function main() {
   console.log(`upgrades.json: ${Object.keys(out.items).length} items with sources; ${out.builtIn}`);
   process.exit(0);
 }
-
-export { sourceText, factionOf, kindsOf, usable, special };
 
 // Worker thread: sims the requests it is sent.
 if (!isMainThread) {

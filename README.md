@@ -120,6 +120,9 @@ Rerun `make-sample.mjs` after changing the log, how results are shown, or the si
 | `web/index.html`, `web/style.css`, `web/js/app.js` | The page |
 | `web/js/logparser.js` | Combat log parser |
 | `web/js/analyze.js` | Fight metrics, the wowsims request, sim comparison and suggestions |
+| `web/js/render.js`, `web/js/tips-ui.js` | Builds the results HTML (no DOM access, tested) and folds the tips list |
+| `web/js/upgrades-ui.js` | The "Gear upgrades" flow: picks candidates, runs the two sim passes, shows the table and AH prices |
+| `web/js/fields.js`, `web/js/format.js`, `web/js/errors.js`, `web/js/sim-config.js` | Names for the positions in the compact tables, shared formatting helpers, error types, sim iteration limits |
 | `web/js/cooldowns.js` | Cooldown timing (missed uses, holding for execute, per-pull view on dungeon runs) |
 | `web/js/rage.js` | Rage read (Heroic Strike starving or overcapping) and the execute phase report |
 | `web/js/simpool.js`, `web/js/sim-worker.js` | Downloads the WASM sim once and runs it in up to 4 Web Workers |
@@ -127,7 +130,8 @@ Rerun `make-sample.mjs` after changing the log, how results are shown, or the si
 | `web/js/upgrades.js` | Picks upgrade candidates per slot and reads the sim results |
 | `web/js/wcl.js`, `web/js/wcl-queries.js` | Warcraft Logs import: through the Worker, or with the viewer's own sign-in |
 | `worker/` | Cloudflare Worker that loads public Warcraft Logs reports with no sign-in ([worker/README.md](worker/README.md)) |
-| `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |
+| `scripts/build-sim.sh`, `scripts/make_names.py`, `scripts/make_version.py` | Build the sim and the item/spell name tables and version file into `web/sim/` |
+| `scripts/lib/node-sim.mjs` | Loads the built sim in Node (precompute script and the `tests/run_*.mjs` tools) |
 | `scripts/precompute-upgrades.mjs` | Ranks gear per rotation for the upgrades section (`web/sim/upgrades.json`) |
 | `scripts/ah-prices.mjs`, `web/js/prices.js` | Auction house prices for crafted upgrades (`ah-prices` branch) |
 | `scripts/availability.mjs`, `data/forever-availability.json` | The hand-kept list of what Forever has not released yet, applied at build time |

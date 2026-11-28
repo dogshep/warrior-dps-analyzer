@@ -25,6 +25,8 @@ const REFINE = { min: 200, max: 1000, targetMs: 15000, keep: 8 };
 const UPGRADE_TIME_CAP_MS = 120000;
 const UPGRADE_WORKERS = pool.THREADS;
 let upgradeTable = null;
+// What the table on the page was built from, so a price choice can redraw it.
+let lastUpgrades = null;
 
 // The ticked source kinds, as the letters upgrades.json uses.
 function upgradeKinds() { return [...document.querySelectorAll('.upgKind:checked')].map(el => el.value).join(''); }
@@ -141,7 +143,7 @@ async function findUpgrades() {
     const s1 = upgradePlan(cands.length + setJobs.length, SCREEN).iters;
     const out1 = await runPass(jobsFor(cands, setJobs, s1), (t, f) => bar(`Screening ${cands.length} possible upgrades, ${s1} fights each, on ${threads}… ${t}`, f));
     const b1 = out1.get('base');
-    if (!b1) throw new CancelledError('cancelled', { capped });
+    if (!b1) throw new CancelledError({ capped });
     const res1 = resultsOf(cands, out1, b1), cost1 = setCostOf(out1, b1);
     show(res1, cost1, b1.avg);
     const keep = refineSet(res1, b1.avg, { maxKeep: REFINE.keep });
@@ -193,7 +195,6 @@ function savePricePrefs() {
   if (lastUpgrades) renderUpgrades(lastUpgrades);
   showPriceAge();
 }
-let lastUpgrades = null;
 
 function renderUpgrades(m) {
   $('upgOut').innerHTML = upgradesHtml({ ...m, table: upgradeTable, region: $('ahRegion').value, market: $('ahMarket').value });
