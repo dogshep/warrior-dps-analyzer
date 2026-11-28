@@ -96,6 +96,7 @@ const DEBUFF_RULES = [
 ];
 
 import { cooldownReport, cooldownTips } from './cooldowns.js';
+import { rageReport, rageTips, executeReport, executeTips } from './rage.js';
 
 const inFight = (f, t) => t >= f.start && t <= f.end;
 const sum = a => a.reduce((s, x) => s + x, 0);
@@ -203,7 +204,7 @@ export function analyzeFight(parser, guid, fight, names) {
   const pullSpans = pulls && pulls.map(pl => ({ start: pl.start, end: pl.end, targets: countTargets(pl.targets, pl.dmg) }));
   const cooldowns = cooldownReport(p, fight, { pulls: pullSpans, dps: total / dur, dur, executeStart, executeKnown, targetCount });
 
-  return {
+  const a = {
     names, guid, cooldowns, pullSpans, name: parser.names.get(guid), fight, dur, simDur, isRun, pulls: pulls ? pulls.length : null, pullStarts: pulls ? pulls.map(pl => pl.start) : null, total, dps: total / dur,
     abilities: [...byAbility.values()].sort((a, b) => b.damage - a.damage),
     casts, dmg, misses, targetCount, mainTarget, executeStart, executeKnown,
@@ -217,6 +218,9 @@ export function analyzeFight(parser, guid, fight, names) {
     },
     buffsSeen: [...new Set(auras.filter(a => a.t <= fight.end && a.t >= fight.start - 600000).map(a => a.name))],
   };
+  a.rage = rageReport(a, p.rage);
+  a.execute = executeReport(a, p.rage);
+  return a;
 }
 
 // The gear, buffs and consumables the log shows, as a wowsims RaidSimRequest.
@@ -356,7 +360,7 @@ export function suggestions(a, sim, ideal, castable) {
   out.push(...cooldownTips(a.cooldowns || [], a.fight, a));
 
   if (a.uptimes.battleShout < 0.9) out.push({ kind: 'buff', title: `Keep Battle Shout up (only ${Math.round(a.uptimes.battleShout * 100)}% uptime)`, detail: 'Refresh it before it drops; it is a lot of attack power for one global cooldown.', gain: null });
-  if (a.rageCapped !== null && a.rageCapped > 0.08) out.push({ kind: 'rage', title: `You sat at 90+ rage ${Math.round(a.rageCapped * 100)}% of the fight`, detail: 'Capped rage is wasted. Queue Heroic Strike (or Cleave on packs) when you are above 60 rage.', gain: null });
+  out.push(...rageTips(a.rage, a), ...executeTips(a.execute, a));
   if (a.idleSec > 4 && !a.died) out.push({ kind: 'uptime', title: `About ${Math.round(a.idleSec)}s with no attacks or casts`, detail: 'Stay in melee range and keep auto attack going between mechanics. Charge, Intercept and pre-positioning help.', gain: (a.idleSec / a.dur) * a.dps });
   if (a.died) out.push({ kind: 'survival', title: `You died at ${Math.round(a.deathAt)}s`, detail: 'A dead warrior does 0 DPS. Check what killed you and use a healthstone, potion or Shield Wall timing.', gain: null });
 
