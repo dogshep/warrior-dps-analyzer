@@ -6,8 +6,10 @@
 // Both reads explain *why* the sim comparison finds missing casts, so their tips carry no DPS number of their
 // own (that would count the same loss twice).
 
+import { joinList } from './format.js';
+
 // Cooldown (ms) and rage cost of the main attacks, from the wowsims Forever spell data.
-export const MAIN_ATTACKS = {
+const MAIN_ATTACKS = {
   Bloodthirst: { cd: 6000, cost: 30 },
   'Mortal Strike': { cd: 6000, cost: 30 },
   Whirlwind: { cd: 10000, cost: 25 },
@@ -66,8 +68,6 @@ export function rageReport(a, rageSamples) {
   };
 }
 
-const list = xs => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
-
 export function rageTips(r, a) {
   if (!r) return [];
   const out = [];
@@ -77,7 +77,7 @@ export function rageTips(r, a) {
     out.push({
       kind: 'rage', gain: null,
       title: `Heroic Strike is starving your main attacks (${r.hsLow} of ${r.hs} went out below ${HS_MIN_RAGE} rage)`,
-      detail: `Your ${list(w)} came off cooldown without the rage to cast it, about ${Math.round(sec)}s of waiting in all. ` +
+      detail: `Your ${joinList(w)} came off cooldown without the rage to cast it, about ${Math.round(sec)}s of waiting in all. ` +
         `The sim queues Heroic Strike only at ${HS_MIN_RAGE}+ rage${a.targetCount > 1 ? ' (Cleave at 25+ on packs)' : ''}, so ${a.spec === 'arms' ? 'Mortal Strike' : 'Bloodthirst'} and Whirlwind always have rage. These waits are part of why the sim casts them more.`,
     });
   }

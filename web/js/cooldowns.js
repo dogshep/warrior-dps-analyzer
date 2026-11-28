@@ -2,10 +2,12 @@
 // Boss fights get a per-fight plan (missed uses, holding the last use for execute, stacking burst).
 // Dungeon runs get a per-pull view, because how fast the group pulls decides whether a cooldown is back.
 
+import { mmss, joinList } from './format.js';
+
 // cd and dur in seconds, as in wowsims/forever's spell data (Sweeping Strikes lasts 20s there, 5 charges). `value` is the rough share of your damage the cooldown adds while it is up.
 // `always`: every warrior has it, so it counts even when never pressed. Others count only once seen in the log
 // (talents, racials and potions the log cannot otherwise confirm).
-export const COOLDOWNS = [
+const COOLDOWNS = [
   { name: 'Death Wish', cd: 180, dur: 30, value: 0.2, burst: true },
   { name: 'Recklessness', cd: 1800, dur: 15, value: 0.4, burst: true, always: true },
   { name: 'Blood Fury', cd: 120, dur: 15, value: 0.08, burst: true },
@@ -20,7 +22,6 @@ const LATE_MS = 5000;       // a cooldown that comes back with under 5s left is 
 const BIG_PULL_S = 20;      // on a run, pulls at least this long are worth a burst cooldown
 const SMALL_PULL_S = 15;
 
-const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 // Every use of a cooldown in the loaded data, from cast events, else from the buff it puts on you.
 function usesOf(p, cd) {
@@ -111,8 +112,6 @@ export function cooldownReport(p, fight, { pulls, dps, dur, executeStart, execut
   return rows;
 }
 
-const list = xs => xs.length < 3 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
-
 // Suggestions from the report, in the same shape as the other tips.
 export function cooldownTips(rows, fight, { isRun, executeStart }) {
   const out = [];
@@ -122,7 +121,7 @@ export function cooldownTips(rows, fight, { isRun, executeStart }) {
       if (r.lost > 0) {
         const tail = r.uses.length ? r.idle.find(([, b]) => b === fight.end) : null;
         const detail = [
-          r.uses.length ? `You used it at ${list(r.uses.map(at))}.` : 'You never used it this fight.',
+          r.uses.length ? `You used it at ${joinList(r.uses.map(at))}.` : 'You never used it this fight.',
           r.availableAt > fight.start ? `It was not ready until ${at(r.availableAt)} because you used it before the pull.` : '',
           r.heldSec > 10 ? `It sat ready for ${Math.round(r.heldSec)}s before you pressed it, which pushed every later use back.` : '',
           tail ? `It was ready again at ${at(tail[0])} and the fight ended at ${at(fight.end)}. Even a short window is worth pressing it.` : '',
@@ -162,4 +161,3 @@ export function cooldownTips(rows, fight, { isRun, executeStart }) {
   return out;
 }
 
-export { mmss };

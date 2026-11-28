@@ -2,6 +2,8 @@
 // Works in the browser (streaming a File) and in Node (from a string), and keeps only what the analyzer needs.
 
 const SPELL_PREFIX = ['SPELL_', 'RANGE_'];
+// No damage from the warrior for this long ends a pull (dungeon runs are one long fight in the log).
+export const PULL_GAP_MS = 15000;
 const ADV_FIELDS = 17;
 const ADV_EVENT = /_(DAMAGE|CAST_SUCCESS|HEAL|ENERGIZE|DRAIN|LEECH)$/;
 
@@ -255,7 +257,7 @@ export class LogParser {
       let inEnc = false;
       for (let k = ei; k < encs.length && encs[k].start <= d.t; k++) if (d.t <= encs[k].end) { inEnc = true; break; }
       if (inEnc) continue;
-      if (!cur || d.t - cur.end > 15000) { cur = { kind: 'trash', start: d.t, end: d.t, dmg: 0, names: new Set() }; trash.push(cur); }
+      if (!cur || d.t - cur.end > PULL_GAP_MS) { cur = { kind: 'trash', start: d.t, end: d.t, dmg: 0, names: new Set() }; trash.push(cur); }
       cur.end = d.t; cur.dmg += d.amount;
       cur.names.add(this.names.get(d.dst) || '?');
     }

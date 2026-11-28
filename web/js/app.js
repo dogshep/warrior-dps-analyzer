@@ -1,15 +1,14 @@
 import { parseFile } from './logparser.js';
 import * as wcl from './wcl.js';
 import { showSample, clearSample, sampleLog } from './sample.js';
-import { mmss } from './cooldowns.js';
+import { $, esc, fmt, mmss } from './format.js';
 import * as pool from './simpool.js';
 import { HS_EXECUTE_RAGE } from './rage.js';
+import { DEFAULT_ITERATIONS, MIN_ITERATIONS, MAX_ITERATIONS } from './sim-config.js';
 import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
 import { loadPrices, priceFor, materialsList, houseKey, gold, age } from './prices.js';
-import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
+import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS } from './analyze.js';
 
-const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 $('hsRage').textContent = HS_EXECUTE_RAGE;
 const PRESETS = ['fury', 'fury_2h', 'arms'];
 
@@ -23,7 +22,9 @@ const data = (async () => {
   return { names: safeNames(names), apls: Object.fromEntries(PRESETS.map((p, i) => [p, apls[i]])) };
 })();
 
-const MAX_ITERATIONS = 5000;
+$('iters').value = DEFAULT_ITERATIONS;
+$('iters').min = MIN_ITERATIONS;
+$('iters').max = MAX_ITERATIONS;
 // Stops running sims (Cancel buttons, a new file, the upgrade time cap).
 const cancelSim = pool.cancel;
 // Starts the sim workers in the background once there is something to analyze, so the engine is usually
@@ -88,7 +89,7 @@ async function analyze() {
   }
   const a = analyzeFight(parser, guid, fight, names);
   if ($('preset').value) a.preset = $('preset').value;
-  const iterations = Math.min(MAX_ITERATIONS, Math.max(50, Math.round(Number($('iters').value)) || 300));
+  const iterations = Math.min(MAX_ITERATIONS, Math.max(MIN_ITERATIONS, Math.round(Number($('iters').value)) || DEFAULT_ITERATIONS));
   $('iters').value = String(iterations);
   const opts = { iterations, race: $('race').value || undefined, talents: $('talents').value.trim() || undefined };
 

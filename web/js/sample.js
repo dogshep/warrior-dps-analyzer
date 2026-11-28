@@ -2,7 +2,7 @@
 // in sample/sample-report.json were worked out ahead of time by scripts/make-sample.mjs, which runs the real page
 // on sample/sample-WoWCombatLog.txt (a log written by scripts/make-sample-log.mjs, with no real players in it).
 
-const $ = id => document.getElementById(id);
+import { $ } from './format.js';
 
 // The parts of the results page the snapshot fills in, by element id. Anything else in the file is ignored.
 export const SAMPLE_PARTS = ['stats', 'tips', 'simnote', 'cds', 'cdnote', 'execSum', 'execTable', 'upgOut', 'upgNote', 'abil', 'gear'];

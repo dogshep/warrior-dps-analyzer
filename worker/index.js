@@ -5,11 +5,10 @@
 // The Origin check only stops other websites from using it in a browser; scripts can send any Origin. What
 // protects the site's Warcraft Logs quota is: strict variable checks (so requests can't be varied endlessly to
 // dodge the cache), caching of answers and of failures, and a per-IP rate limit on requests that miss the cache.
-import { QUERIES, QUERY_VARS } from '../web/js/wcl-queries.js';
+import { QUERIES, QUERY_VARS, WCL_SITE, wclApis } from '../web/js/wcl-queries.js';
 
-const TOKEN_URL = 'https://forever.warcraftlogs.com/oauth/token';
-// Same order as the page: the Classic API address answers for Forever reports; Forever's own is the fallback.
-const APIS = ['https://classic.warcraftlogs.com/api/v2/client', 'https://forever.warcraftlogs.com/api/v2/client'];
+const TOKEN_URL = `${WCL_SITE}/oauth/token`;
+const APIS = wclApis('client');
 const CACHE_SECONDS = 600;
 const FAIL_CACHE_SECONDS = 60;
 // Report times are milliseconds from the start of the report.
