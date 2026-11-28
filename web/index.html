@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Only this site's own scripts run. The sim needs wasm-unsafe-eval; inline style attributes draw the bars. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://*.warcraftlogs.com https://*.workers.dev; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://*.warcraftlogs.com https://*.workers.dev https://raw.githubusercontent.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Warrior DPS Analyzer</title>
 <link rel="stylesheet" href="style.css">
@@ -81,6 +81,9 @@
       </div>
       <div class="row inline opts">
         <label class="chk">Items to sim <select id="upgMax"><option>8</option><option selected>16</option><option>24</option></select></label>
+        <label class="chk" title="For the approximate gold cost of crafted upgrades, from Blizzard's auction house data">AH prices <select id="ahRegion"><option value="us">US</option><option value="eu">EU</option></select></label>
+        <label class="chk">Realm type <select id="ahMarket"><option value="normal">Normal</option><option value="pvp">PvP</option><option value="rp">RP</option><option value="rppvp">RP PvP</option></select></label>
+        <span class="hint" id="ahUpdated"></span>
       </div>
       <button id="upgGo" class="primary" disabled>Find upgrades</button> <button id="upgCancel" hidden>Cancel</button> <span class="hint" id="upgEta"></span>
       <div id="upgOut"></div>

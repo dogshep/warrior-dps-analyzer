@@ -3,6 +3,7 @@ import * as wcl from './wcl.js';
 import { mmss } from './cooldowns.js';
 import * as pool from './simpool.js';
 import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
+import { loadPrices, priceFor, houseKey, gold, age } from './prices.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
@@ -290,6 +291,7 @@ function upgradePlan(n) {
 }
 
 function resetUpgrades() {
+  lastUpgrades = null;
   $('upgOut').innerHTML = '';
   $('upgNote').textContent = '';
   $('upgGo').disabled = !last;
@@ -381,7 +383,10 @@ async function findUpgrades() {
       const r = out.get(`set${j.slot}`);
       return [j.slot, { dps: b.avg - r.avg, err: Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n) }];
     }));
-    renderUpgrades(bestPerSlot(results, b.avg), gear, names, cands.filter((c, i) => out.has(i)), setCost, underCap);
+    const prices = await loadPrices();
+    lastUpgrades = [bestPerSlot(results, b.avg), gear, names, cands.filter((c, i) => out.has(i)), setCost, underCap, prices, a.combatant?.faction];
+    renderUpgrades(...lastUpgrades);
+    showPriceAge();
     $('upgNote').textContent = `Simmed ${results.length} item${results.length === 1 ? '' : 's'} (${iters} fights each) and your current gear (${iters * 2}) in ${secs.toFixed(1)}s on ${UPGRADE_WORKERS} thread${UPGRADE_WORKERS > 1 ? 's' : ''}.` +
       (capped ? ` Stopped at the ${UPGRADE_TIME_CAP_MS / 1000}s limit; ${cands.length - results.length} were not simmed.` : '') +
       ` ± is the sim's margin for each gain (95%). The candidates were picked from items ranked ahead of time in pre-raid gear.`;
@@ -406,7 +411,36 @@ function underCapLine(underCap, names) {
   return list.length ? `<p class="hint">Left out because they would put you under the hit cap for special attacks: ${esc(list.join('; '))}.</p>` : '';
 }
 
-function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap = []) {
+// AH price choices (region and realm type), remembered in this browser.
+const PRICE_PREFS = 'warriorAnalyzer.ahHouse';
+function readPricePrefs() {
+  try {
+    const v = JSON.parse(localStorage.getItem(PRICE_PREFS) || '{}');
+    if (['us', 'eu'].includes(v.region)) $('ahRegion').value = v.region;
+    if (['normal', 'pvp', 'rp', 'rppvp'].includes(v.market)) $('ahMarket').value = v.market;
+  } catch { /* storage blocked: keep the defaults */ }
+}
+function savePricePrefs() {
+  try { localStorage.setItem(PRICE_PREFS, JSON.stringify({ region: $('ahRegion').value, market: $('ahMarket').value })); } catch { /* ignore */ }
+  if (lastUpgrades) renderUpgrades(...lastUpgrades);
+  showPriceAge();
+}
+let lastUpgrades = null;
+
+// Price line for a crafted upgrade, from the chosen auction house.
+function priceLine(prices, key, id) {
+  if (!String(upgradeTable.items[id]?.[3] || '').includes('c')) return '';
+  const p = priceFor(prices, key, id);
+  if (p === undefined) return '';
+  if (p === null) return '<div class="src">Not on the auction house right now</div>';
+  return `<div class="price">AH from ${gold(p.min)}${p.listed > 1 ? ` <span class="src">(${p.listed} listed, median ${gold(p.median)})</span>` : ''}</div>`;
+}
+
+function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap = [], prices = null, faction) {
+  const MARKET_NAMES = { normal: 'Normal', pvp: 'PvP', rp: 'RP', rppvp: 'RP PvP' };
+  const key = houseKey($('ahRegion').value, $('ahMarket').value, faction);
+  const house = prices?.houses?.[key];
+  const crafted = rows.some(r => String(upgradeTable.items[r.id]?.[3] || '').includes('c'));
   const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
   const tags = id => [...(upgradeTable.items[id]?.[3] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
   const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[0] || `#${id}`)}</a>`;
@@ -418,14 +452,34 @@ function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap 
         const cost = setCost.get(r.slot);
         const sets = (r.sets?.lost || []).map(x => `<div class="warn small">Breaks ${esc(x)}${cost ? `, worth about ${fmt(Math.max(0, cost.dps))} DPS (±${fmt(1.96 * cost.err)}). The gain already counts that loss.` : '. The gain already counts that loss.'}</div>`).join('') +
           (r.sets?.gained || []).map(x => `<div class="src">Completes ${esc(x)}</div>`).join('');
-        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[0] || `#${cur}`)}</div>` : ''}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[0] || '')}</td></tr>`;
+        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[0] || `#${cur}`)}</div>` : ''}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[0] || '')}${priceLine(prices, key, r.id)}</td></tr>`;
       }).join('') + '</table>'
     : '<p>None of the likely upgrades beat your current gear in the sim.</p>') +
     (none.length ? `<p class="hint">Simmed but not an upgrade in your gear: ${esc(none.join(', '))}.</p>` : '') +
-    underCapLine(underCap, names);
+    underCapLine(underCap, names) +
+    (crafted ? `<p class="hint">${house
+      ? `Crafted item prices: lowest buyout on the ${$('ahRegion').value.toUpperCase()} ${MARKET_NAMES[$('ahMarket').value]} ${faction === 0 ? 'Horde' : 'Alliance'} auction house, from Blizzard's auction data, updated ${age(house.updated)}. Prices move; check in game.`
+      : prices ? 'No auction house prices for this realm type yet.' : 'Auction house prices could not be loaded.'}</p>` : '');
 }
 
 $('upgGo').onclick = findUpgrades;
+readPricePrefs();
+showPriceAge();
+
+// When the chosen house's prices were last pulled from Blizzard, shown beside the AH choices.
+async function showPriceAge(faction = lastUpgrades?.[7]) {
+  const prices = await loadPrices();
+  const el = $('ahUpdated');
+  if (!prices) { el.textContent = 'Prices unavailable right now.'; return; }
+  const h = prices.houses?.[houseKey($('ahRegion').value, $('ahMarket').value, faction)] ||
+    prices.houses?.[houseKey($('ahRegion').value, $('ahMarket').value, faction === 0 ? 1 : 0)];
+  const ts = h?.updated || prices.updated;
+  const when = new Date(ts);
+  el.textContent = h ? `Blizzard AH data updated ${age(ts)} (${when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}).` : 'No prices for this realm type yet.';
+  el.title = `Last price pull: ${new Date(prices.updated).toLocaleString()}. Prices are refreshed about every 3 hours.`;
+}
+$('ahRegion').onchange = savePricePrefs;
+$('ahMarket').onchange = savePricePrefs;
 $('upgCancel').onclick = cancelSim;
 $('upgMax').onchange = () => { if (last && !$('upgOut').innerHTML) resetUpgrades(); };
 $('go').onclick = analyze;
