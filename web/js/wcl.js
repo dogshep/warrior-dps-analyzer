@@ -6,6 +6,7 @@
 // with their own Warcraft Logs account. The token stays in this tab's sessionStorage, not localStorage: every
 // project site under dogshep.github.io shares one origin, and localStorage would hand it to all of them for a week.
 
+import { makePlayer } from './logparser.js';
 import { QUERIES, QUERY_VARS, WCL_SITE as SITE, wclApis } from './wcl-queries.js';
 
 const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
@@ -211,7 +212,7 @@ async function fetchFight(report, warrior, fight, fetchImpl) {
   const name = id => report.abilities.get(id) || `Spell ${id}`;
   const guid = String(actor);
 
-  const p = { guid, casts: [], damage: [], misses: [], auras: [], rage: [], targets: new Map(), deaths: [], isWarrior: true };
+  const p = makePlayer(guid, true);
   const names = new Map(report.actors.map(a => [String(a.id), a.name]));
   const targetHp = new Map();
   const debuffs = [];

@@ -69,6 +69,20 @@ function critIndex(tok) {
   return -1;
 }
 
+/**
+ * What the analysis reads from a parsed log. LogParser builds it from a combat log and wcl.js builds it from a
+ * Warcraft Logs report (which has only the one warrior, and no fights() method).
+ * @typedef {object} Parsed
+ * @property {Map<string, Player>} players      guid -> events of that player (see makePlayer)
+ * @property {Map<string, string>} names        guid -> unit name
+ * @property {Map<string, object>} combatants   guid -> {time, guid, faction, items, auras, ...} from COMBATANT_INFO
+ * @property {Map<string, Array<[number, number]>>} targetHp  unit guid -> [time, health fraction] samples
+ * @property {Array<object>} debuffs            {t, ev, spellId, name, src, dst} on non-player targets
+ */
+
+/** The per-player event store: every list is in time order. */
+export const makePlayer = (guid, isWarrior = false) => ({ guid, casts: [], damage: [], misses: [], auras: [], rage: [], targets: new Map(), deaths: [], isWarrior });
+
 export class LogParser {
   constructor() {
     this.header = {};
@@ -79,6 +93,9 @@ export class LogParser {
     this.openEncounter = null;
     this.players = new Map(); // guid -> per-player event store
     this.unitDeaths = [];
+    this.targetHp = new Map(); // unit guid -> [time, health fraction]
+    this.debuffs = []; // auras on non-player targets
+    this.fightCache = new Map(); // player guid -> fights()
     this.firstTime = NaN;
     this.lastTime = NaN;
     this.lines = 0;
@@ -87,7 +104,7 @@ export class LogParser {
   player(guid) {
     let p = this.players.get(guid);
     if (!p) {
-      p = { guid, casts: [], damage: [], misses: [], auras: [], rage: [], targets: new Map(), deaths: [], isWarrior: false };
+      p = makePlayer(guid);
       this.players.set(guid, p);
     }
     return p;
@@ -196,7 +213,6 @@ export class LogParser {
         }
       } else if (a[0] && a[0] === dst && Number(a[3]) > 0) {
         // Target health, for execute phase detection.
-        this.targetHp ??= new Map();
         let arr = this.targetHp.get(dst);
         if (!arr) this.targetHp.set(dst, (arr = []));
         arr.push([t, Number(a[2]) / Number(a[3])]);
@@ -234,7 +250,6 @@ export class LogParser {
       if (dst === src) p.auras.push({ t, ev: ev.slice(11), spellId, name: spellName, src });
       else if (dst && dst.startsWith('Player-')) this.player(dst).auras.push({ t, ev: ev.slice(11), spellId, name: spellName, src });
       else {
-        this.debuffs ??= [];
         this.debuffs.push({ t, ev: ev.slice(11), spellId, name: spellName, src, dst });
       }
     }
@@ -245,7 +260,6 @@ export class LogParser {
   fights(guid) {
     const p = this.players.get(guid);
     if (!p) return [];
-    this.fightCache ??= new Map();
     if (this.fightCache.has(guid)) return this.fightCache.get(guid).map(f => ({ ...f }));
     const out = this.encounters.filter(e => !Number.isNaN(e.end)).map(e => ({ kind: 'boss', name: e.name, start: e.start, end: e.end, success: e.success }));
     const encs = [...out].sort((a, b) => a.start - b.start);

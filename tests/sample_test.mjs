@@ -18,7 +18,7 @@ const fights = parser.fights(war.guid);
 assert.equal(fights.length, 1);
 assert.equal(fights[0].kind, 'boss');
 // Boss health is logged (for the execute card) and Flurry is on the warrior.
-const hp = parser.targetHp?.get('Creature-0-0000-249-0-10184-0000000001');
+const hp = parser.targetHp.get('Creature-0-0000-249-0-10184-0000000001');
 assert.ok(hp && hp.some(([, h]) => h <= 0.2), 'boss health under 20% is in the log');
 assert.ok(parser.players.get(war.guid).auras.some(a => a.name === 'Flurry'), 'Flurry is in the log');
 
