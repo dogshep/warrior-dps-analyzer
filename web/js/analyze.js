@@ -312,10 +312,29 @@ export function aplSpellNames(apl, names) {
 const TIPS = {
   Execute: 'Once the boss is below 20%, Execute becomes your main button. Keep rage for it.',
   'Heroic Strike': 'Queue Heroic Strike whenever rage is above about 40 so rage never caps.',
-  Overpower: 'When the target dodges, the sim swaps to Battle Stance for Overpower. Watch for the Overpower proc.',
-  Rend: 'The sim weaves Rend in Battle Stance while rage is low. It is a small gain; skip it if it costs you Bloodthirst timing.',
+  // Overpower and Rend are small, situational gains, so their tips say when they are worth it and when to skip them.
+  Overpower: 'When the target dodges and your rage is low, the sim swaps to Battle Stance for Overpower and back. It only pays with Tactical Mastery (rage kept on the swap) and when the swap won\'t delay Bloodthirst or Whirlwind. If you are unsure, skip it: it is a small filler.',
+  Rend: 'The sim weaves Rend in Battle Stance only on one target, at low rage, when it can swap back without delaying Bloodthirst or Whirlwind. It is a small gain: skip it on short fights, on bleed-immune targets, or if it costs you Bloodthirst timing.',
   'Sunder Armor': 'Keep 5 stacks of Sunder Armor up when no other warrior is on it.',
 };
+// Optional abilities: their tips say so in the title, so they don't read as mistakes.
+const OPTIONAL = new Set(['Overpower', 'Rend']);
+
+// Guide sections behind each kind of tip. Warcraft Tavern's Forever Fury guide has section links; Icy Veins'
+// Forever rotation page doesn't, so it links to the page. Guides differ in places (Icy Veins puts Whirlwind before
+// Execute under 20%); the tips follow the wowsims rotation the sim uses.
+const WT = 'https://www.warcrafttavern.com/forever/guides/fury-warrior/';
+const IV = 'https://www.icy-veins.com/wow-forever/fury-warrior-melee-dps-pve-rotation-cooldowns-abilities';
+export const GUIDES = {
+  rotation: [['Rotation (Warcraft Tavern)', `${WT}#ftoc-rotation`], ['Rotation (Icy Veins)', IV]],
+  stance: [['Stance dancing (Warcraft Tavern)', `${WT}#ftoc-stance-dancing`], ['Overpower and Rend (Icy Veins)', IV]],
+  rage: [['Rage management (Warcraft Tavern)', `${WT}#ftoc-rage-management`], ['Heroic Strike and Cleave (Icy Veins)', IV]],
+  execute: [['Rotation (Warcraft Tavern)', `${WT}#ftoc-rotation`], ['Execute phase (Icy Veins)', IV]],
+  cooldown: [['Cooldowns (Warcraft Tavern)', `${WT}#ftoc-cooldowns-utility`], ['Cooldowns (Icy Veins)', IV]],
+  uptime: [['Movement (Warcraft Tavern)', `${WT}#ftoc-movement`]],
+  buff: [['Rotation (Warcraft Tavern)', `${WT}#ftoc-rotation`]],
+};
+const guideFor = t => t.kind === 'rotation' ? (OPTIONAL.has(t.ability) ? GUIDES.stance : t.ability === 'Execute' ? GUIDES.execute : GUIDES.rotation) : GUIDES[t.kind];
 
 // Abilities that are not part of a DPS priority, so "the sim never uses it" is no advice.
 const UTILITY = new Set(['Melee', 'Sunder Armor', 'Battle Shout', 'Hamstring', 'Pummel', 'Shield Bash', 'Charge', 'Intercept', 'Victory Rush', 'Taunt', 'Mocking Blow', 'Demoralizing Shout', 'Intimidating Shout', 'Piercing Howl', 'Berserker Rage', 'Bloodrage', 'Thunder Clap']);
@@ -340,8 +359,8 @@ export function suggestions(a, sim, ideal, castable) {
       const gain = (missing * perCast) / a.dur;
       if (gain < 1) continue;
       out.push({
-        kind: 'rotation',
-        title: `Cast ${name} more: ${myCasts} casts vs ${Math.round(sc)} in the sim`,
+        kind: 'rotation', ability: name,
+        title: `${OPTIONAL.has(name) ? 'Optional: ' : ''}Cast ${name} more: ${myCasts} casts vs ${Math.round(sc)} in the sim`,
         detail: TIPS[name] ? TIPS[name]
           : name === 'Bloodthirst' || name === 'Mortal Strike' || name === 'Whirlwind' ? `Press ${name} the moment it comes off cooldown. It is top priority outside of execute.`
           : `The sim's priority list uses ${name} about ${Math.round((sc / a.dur) * 60 * 10) / 10} times a minute.`,
@@ -383,13 +402,16 @@ export function suggestions(a, sim, ideal, castable) {
   // grow"); gear and consumable tips come on top of it. Play tips are estimated one at a time and overlap, so if
   // they add up to more than the gap they are scaled down to share it.
   for (const t of out) t.group = t.kind === 'gear' || t.kind === 'consumes' ? 'gear' : 'play';
+  for (const t of out) { const g = guideFor(t); if (g) t.links = g; }
   const gap = sim ? sim.simDps - a.dps : null;
   const playSum = sum(out.filter(t => t.group === 'play' && t.gain).map(t => t.gain));
   if (gap !== null && playSum > Math.max(0, gap)) {
     const f = Math.max(0, gap) / playSum;
     for (const t of out) if (t.group === 'play' && t.gain) t.gain *= f;
   }
-  out.sort((x, y) => (y.gain ?? -1) - (x.gain ?? -1));
+  // Biggest gains first, but optional techniques (Overpower, Rend) after the core rotation tips with a gain.
+  const tier = t => (t.gain == null ? 2 : OPTIONAL.has(t.ability) ? 1 : 0);
+  out.sort((x, y) => tier(x) - tier(y) || (y.gain ?? -1) - (x.gain ?? -1));
   return out;
 }
 
