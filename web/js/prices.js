@@ -14,13 +14,23 @@ export function gold(copper) {
 // The house for a region, realm type and log faction (1 Alliance, 0 Horde).
 export const houseKey = (region, market, faction) => `${region}-${market}-${faction === 0 ? 'horde' : 'alliance'}`;
 
-// { min, median, listed, updated } for an item; null when the house has none listed; undefined when there is no
-// data for that house.
+// { min, median, listed, updated, materials, unpriced } for an item (listed 0 when only its materials are priced;
+// materials undefined when they aren't); null when the house has nothing on it; undefined when there is no data
+// for that house.
 export function priceFor(prices, key, id) {
   const h = prices?.houses?.[key];
   if (!h) return undefined;
   const p = h.items?.[id];
-  return p ? { min: p[0], median: p[1], listed: p[2], updated: h.updated } : null;
+  if (!p) return null;
+  const out = { min: p[0], median: p[1], listed: p[2], updated: h.updated };
+  if (p.length >= 5) Object.assign(out, { materials: p[3], unpriced: p[4] });
+  return out;
+}
+
+// "8 Thorium Bar, 2 Arcanite Bar" for an item's recipe, or ''.
+export function materialsList(prices, id) {
+  const r = prices?.recipes?.[id];
+  return r ? r.map(([rid, n]) => `${n} ${prices.reagents?.[rid] || `item ${rid}`}`).join(', ') : '';
 }
 
 // "2 hours ago" style age of a timestamp.

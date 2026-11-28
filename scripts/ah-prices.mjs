@@ -8,9 +8,17 @@
 //             ?namespace=dynamic-forever-{region}   (about 9 MB per busy house, refreshed hourly)
 // Forever has no realms: each realm type (ruleset) has an Alliance, a Horde and a Blackwater (neutral) house.
 //
-// Usage: BNET_CLIENT_ID=… BNET_CLIENT_SECRET=… node scripts/ah-prices.mjs <upgrades.json> <out.json>
-// Writes { updated, source, houses: { "us-normal-alliance": { updated, items: { id: [min, median, listed] } } } }
-// with prices in copper per item, from buyouts only.
+//   recipes:  GET https://us.api.blizzard.com/data/wow/profession/{id}/skill-tier/{tier} lists a profession's recipes,
+//             and /data/wow/recipe/{id} gives the crafted item and its reagents (namespace static-forever-us).
+//   materials are stackable, so they sell on each house's /commodities list (unit_price), not with the gear.
+//
+// Usage: BNET_CLIENT_ID=… BNET_CLIENT_SECRET=… node scripts/ah-prices.mjs <upgrades.json> <names.json> <out.json>
+// Writes {
+//   updated, source,
+//   recipes: { craftedId: [[reagentId, quantity], …] }, reagents: { reagentId: name },
+//   houses: { "us-normal-alliance": { updated, items: { id: [min, median, listed, materials, unpriced] } } }
+// } with prices in copper per item, from buyouts only. materials is what buying one craft's reagents from the
+// cheapest listings costs, and unpriced how many of its reagents had too few listed to buy (left out of that sum).
 import { readFileSync, writeFileSync } from 'node:fs';
 
 export const REGIONS = ['us', 'eu'];
@@ -26,6 +34,45 @@ export const MARKETS = {
 // The crafted items in an upgrades.json (source kind 'c'), as numbers.
 export function craftedIds(upgrades) {
   return Object.entries(upgrades.items || {}).filter(([, m]) => String(m[3] || '').includes('c')).map(([id]) => Number(id));
+}
+
+// Crafting professions with gear recipes: Blacksmithing, Leatherworking, Tailoring, Engineering.
+export const PROFESSIONS = [164, 165, 197, 202];
+
+// A commodities list -> { reagentId: [[unitPrice, quantity], …] cheapest first } for the wanted reagents.
+export function ladders(commodities, wanted) {
+  const want = new Set(wanted);
+  const out = {};
+  for (const a of commodities.auctions || []) {
+    const id = a.item?.id;
+    const unit = a.unit_price || (a.buyout ? a.buyout / Math.max(1, a.quantity || 1) : 0);
+    if (!want.has(id) || !(unit > 0)) continue;
+    (out[id] ??= []).push([unit, Math.max(1, a.quantity || 1)]);
+  }
+  for (const l of Object.values(out)) l.sort((x, y) => x[0] - y[0]);
+  return out;
+}
+
+// What buying `qty` of a reagent from the cheapest listings costs; null when fewer are listed.
+export function buyCost(ladder, qty) {
+  let left = qty, cost = 0;
+  for (const [unit, n] of ladder || []) {
+    const take = Math.min(n, left);
+    cost += take * unit;
+    left -= take;
+    if (!left) return Math.round(cost);
+  }
+  return null;
+}
+
+// One craft's materials: [copper for the reagents that could be bought, how many reagents couldn't].
+export function materialsCost(recipe, lad) {
+  let cost = 0, unpriced = 0;
+  for (const [id, qty] of recipe) {
+    const c = buyCost(lad[id], qty);
+    if (c === null) unpriced++; else cost += c;
+  }
+  return [cost, unpriced];
 }
 
 // One house's auctions -> { id: [lowest, median, listed] } for the wanted items. Prices are buyout per item, in
@@ -63,42 +110,81 @@ async function token(id, secret) {
   return data.access_token;
 }
 
-// Log-only check of whether Blizzard's profession/recipe endpoints answer for Forever, which would give crafting
-// materials (and their cost) without scraping anyone. Never fails the run.
-async function probeRecipes(auth) {
-  for (const path of ['profession/index', 'profession/164', 'recipe/1']) {
-    const url = `https://us.api.blizzard.com/data/wow/${path}?namespace=static-forever-us&locale=en_US`;
-    try {
-      const res = await fetch(url, { headers: auth });
-      const body = await res.text();
-      console.log(`recipe probe ${path}: HTTP ${res.status} ${body.slice(0, 300).replace(/\s+/g, ' ')}`);
-    } catch (e) { console.log(`recipe probe ${path}: ${e.message}`); }
+const api = (auth, region, path, ns) => fetch(`https://${region}.api.blizzard.com/data/wow/${path}?namespace=${ns}-forever-${region}&locale=en_US`, { headers: auth });
+async function getJson(auth, region, path, ns) {
+  const res = await api(auth, region, path, ns);
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+  return { json: await res.json(), modified: res.headers.get('last-modified') };
+}
+
+// Recipes for the wanted items, found by name in the crafting professions' recipe lists, then checked against
+// the recipe's crafted item. Returns { recipes: {craftedId: [[reagentId, qty]]}, reagents: {id: name} }.
+async function findRecipes(auth, wanted, names) {
+  const want = new Set(wanted);
+  const byName = new Map(wanted.map(id => [names[id]?.[0], id]).filter(([n]) => n));
+  const hits = [];
+  for (const prof of PROFESSIONS) {
+    const { json: p } = await getJson(auth, 'us', `profession/${prof}`, 'static');
+    for (const t of p.skill_tiers || []) {
+      const { json: st } = await getJson(auth, 'us', `profession/${prof}/skill-tier/${t.id}`, 'static');
+      for (const r of (st.categories || []).flatMap(c => c.recipes || [])) if (byName.has(r.name)) hits.push(r.id);
+    }
   }
+  const recipes = {}, reagents = {};
+  for (const rid of hits) {
+    try {
+      const { json: r } = await getJson(auth, 'us', `recipe/${rid}`, 'static');
+      const made = r.crafted_item?.id ?? r.alliance_crafted_item?.id ?? r.horde_crafted_item?.id;
+      if (!want.has(made) || !r.reagents?.length) continue;
+      const per = r.crafted_quantity?.value || 1;
+      recipes[made] = r.reagents.map(x => [x.reagent.id, Math.ceil(x.quantity / per)]);
+      for (const x of r.reagents) reagents[x.reagent.id] = x.reagent.name;
+    } catch (e) { console.warn(`recipe ${rid}: ${e.message}`); }
+  }
+  console.log(`recipes: ${Object.keys(recipes).length} of ${wanted.length} crafted items, ${Object.keys(reagents).length} reagents`);
+  return { recipes, reagents };
 }
 
 async function main() {
-  const [upgradesPath, outPath] = process.argv.slice(2);
+  const [upgradesPath, namesPath, outPath] = process.argv.slice(2);
   const { BNET_CLIENT_ID: id, BNET_CLIENT_SECRET: secret } = process.env;
-  if (!upgradesPath || !outPath || !id || !secret) {
-    console.error('Usage: BNET_CLIENT_ID=… BNET_CLIENT_SECRET=… node scripts/ah-prices.mjs <upgrades.json> <out.json>');
+  if (!upgradesPath || !namesPath || !outPath || !id || !secret) {
+    console.error('Usage: BNET_CLIENT_ID=… BNET_CLIENT_SECRET=… node scripts/ah-prices.mjs <upgrades.json> <names.json> <out.json>');
     process.exit(2);
   }
   const wanted = craftedIds(JSON.parse(readFileSync(upgradesPath, 'utf8')));
   if (!wanted.length) throw new Error('No crafted items in the upgrade list.');
+  const names = JSON.parse(readFileSync(namesPath, 'utf8')).items || {};
   const auth = { Authorization: `Bearer ${await token(id, secret)}` };
-  const out = { updated: new Date().toISOString(), source: 'Blizzard Game Data API (WoW Forever)', items: wanted.length, houses: {} };
+  // Materials are optional: prices still publish if the recipe lookups fail.
+  let found = { recipes: {}, reagents: {} };
+  try { found = await findRecipes(auth, wanted, names); } catch (e) { console.warn(`recipes: ${e.message}`); }
+  const reagentIds = Object.keys(found.reagents).map(Number);
+  const out = { updated: new Date().toISOString(), source: 'Blizzard Game Data API (WoW Forever)', items: wanted.length, ...found, houses: {} };
   let ok = 0, failed = 0;
   for (const region of REGIONS) {
     for (const [market, m] of Object.entries(MARKETS)) {
       for (const side of ['alliance', 'horde']) {
-        const url = `https://${region}.api.blizzard.com/data/wow/ruleset/${m.ruleset}/auctions/${m[side]}?namespace=dynamic-forever-${region}&locale=en_US`;
+        const path = `ruleset/${m.ruleset}/auctions/${m[side]}`;
         try {
-          const res = await fetch(url, { headers: auth });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const items = summarize(await res.json(), wanted);
-          out.houses[`${region}-${market}-${side}`] = { updated: res.headers.get('last-modified') || out.updated, items };
+          const { json, modified } = await getJson(auth, region, path, 'dynamic');
+          const items = summarize(json, wanted);
+          let lad = {};
+          if (reagentIds.length) {
+            try { lad = ladders((await getJson(auth, region, `${path}/commodities`, 'dynamic')).json, reagentIds); } catch (e) { console.warn(`${region} ${market} ${side} materials: ${e.message}`); }
+          }
+          let priced = 0;
+          for (const [craftedId, recipe] of Object.entries(found.recipes)) {
+            if (!Object.keys(lad).length) break;
+            const [cost, unpriced] = materialsCost(recipe, lad);
+            if (unpriced === recipe.length) continue;
+            const row = items[craftedId] || [0, 0, 0];
+            items[craftedId] = [...row.slice(0, 3), cost, unpriced];
+            priced++;
+          }
+          out.houses[`${region}-${market}-${side}`] = { updated: modified || out.updated, items };
           ok++;
-          console.log(`${region} ${market} ${side}: ${Object.keys(items).length} of ${wanted.length} crafted items listed`);
+          console.log(`${region} ${market} ${side}: ${Object.values(items).filter(r => r[2]).length} of ${wanted.length} crafted items listed, materials priced for ${priced}`);
         } catch (e) {
           failed++;
           console.warn(`${region} ${market} ${side}: ${e.message}`);
@@ -106,7 +192,6 @@ async function main() {
       }
     }
   }
-  await probeRecipes(auth);
   if (!ok) throw new Error('No auction house answered.');
   writeFileSync(outPath, JSON.stringify(out));
   console.log(`${outPath}: ${ok} houses, ${failed} failed`);

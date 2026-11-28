@@ -1,7 +1,7 @@
 // Unit checks for the auction house price summary and the page's price text. Usage: node tests/ah_prices_test.mjs
 import assert from 'node:assert/strict';
-import { summarize, craftedIds, MARKETS } from '../scripts/ah-prices.mjs';
-import { priceFor, gold, houseKey } from '../web/js/prices.js';
+import { summarize, craftedIds, MARKETS, ladders, buyCost, materialsCost } from '../scripts/ah-prices.mjs';
+import { priceFor, gold, houseKey, materialsList } from '../web/js/prices.js';
 
 // Only crafted items are wanted.
 assert.deepEqual(craftedIds({ items: { 5: ['x', 0, 1, 'd'], 7: ['y', 0, 1, 'dc'], 9: ['z', 0, 1, 'c'] } }).sort(), [7, 9]);
@@ -33,5 +33,27 @@ assert.deepEqual(priceFor(prices, 'us-normal-alliance', 7), { min: 300000, media
 assert.equal(priceFor(prices, 'us-normal-alliance', 9), null);
 assert.equal(priceFor(prices, 'us-pvp-horde', 7), undefined);
 assert.equal(priceFor(null, 'us-normal-alliance', 7), undefined);
+
+// Materials: commodities give unit prices; buying walks up from the cheapest listings.
+const lad = ladders({ auctions: [
+  { item: { id: 100 }, quantity: 5, unit_price: 200 },
+  { item: { id: 100 }, quantity: 10, unit_price: 100 },
+  { item: { id: 101 }, quantity: 1, unit_price: 5000 },
+  { item: { id: 999 }, quantity: 1, unit_price: 1 },
+] }, [100, 101, 102]);
+assert.deepEqual(lad, { 100: [[100, 10], [200, 5]], 101: [[5000, 1]] });
+assert.equal(buyCost(lad[100], 12), 10 * 100 + 2 * 200);
+assert.equal(buyCost(lad[100], 16), null);
+assert.equal(buyCost(undefined, 1), null);
+// 12 of 100, 1 of 101, 2 of 102 (none listed): 1400 + 5000, one reagent unpriced.
+assert.deepEqual(materialsCost([[100, 12], [101, 1], [102, 2]], lad), [6400, 1]);
+
+// Page: materials fields and the recipe list.
+const withMats = { recipes: { 7: [[100, 12], [101, 1]] }, reagents: { 100: 'Thorium Bar', 101: 'Arcanite Bar' },
+  houses: { k: { updated: 't', items: { 7: [300000, 500000, 3, 6400, 1], 8: [0, 0, 0, 900, 0] } } } };
+assert.deepEqual(priceFor(withMats, 'k', 7), { min: 300000, median: 500000, listed: 3, updated: 't', materials: 6400, unpriced: 1 });
+assert.equal(priceFor(withMats, 'k', 8).listed, 0);
+assert.equal(materialsList(withMats, 7), '12 Thorium Bar, 1 Arcanite Bar');
+assert.equal(materialsList(withMats, 8), '');
 
 console.log('ah prices: ok');
