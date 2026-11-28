@@ -18,7 +18,9 @@ import { availableParallelism } from 'node:os';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_TALENTS, consumesFor, DEFAULT_TARGET } from '../web/js/analyze.js';
-import { SLOT_POOLS, PAIR, poolFor } from '../web/js/upgrades.js';
+import { poolFor } from '../web/js/upgrades.js';
+import { SLOT_POOLS, PAIR, SLOT_OH, isWeaponSlot } from '../web/js/slots.js';
+import { KIND_KEYS, ITEM_TYPE_WEAPON, ITEM_TYPE_RANGED, ITEM_TYPE_BACK, isBodyArmor } from '../web/js/fields.js';
 import { HELD_ITEMS, opensOn } from './availability.mjs';
 import { loadDpsSim } from './lib/node-sim.mjs';
 
@@ -59,7 +61,7 @@ const REP_LEVELS = { 4: 'Neutral', 5: 'Friendly', 6: 'Honored', 7: 'Revered', 8:
 const WEIGHT_STATS = { 0: 100, 1: 100, 14: 200, 17: 50, 18: 70, 19: 50, 21: 50 };
 // Source kinds, as letters in upgrades.json: d dungeon or world drop, r raid, c crafted, q quest, v vendor,
 // f reputation, p PvP. The page filters on them, so each kind (and each faction) gets its own picks below.
-const KINDS = 'drcqvfp';
+const KINDS = KIND_KEYS;
 // Per slot, kind and faction, how many weapons (best by stat weights and weapon DPS) and how many items with procs,
 // on-use effects or weapon skill get simmed. Stat weights price everything else, and price it well.
 const SIM_TOP = 4;
@@ -124,9 +126,9 @@ export function usable(it) {
   if ((it.quality || 0) < 3 || (so.ilvl || 0) < 55 || !(it.sources || []).length || it.randomSuffixOptions) return false;
   if (it.classAllowlist && !it.classAllowlist.includes(1)) return false;
   const t = it.type || 0;
-  if (t >= 1 && t <= 10 && t !== 4 && it.armorType === 1) return false; // cloth, except cloaks
-  if (t === 13 && [5, 7].includes(it.weaponType)) return false;           // held-in-off-hand frills, shields
-  if (t === 14 && ![1, 2, 3, 4].includes(it.rangedWeaponType)) return false;
+  if (isBodyArmor(t) && t !== ITEM_TYPE_BACK && it.armorType === 1) return false; // cloth, except cloaks
+  if (t === ITEM_TYPE_WEAPON && [5, 7].includes(it.weaponType)) return false;           // held-in-off-hand frills, shields
+  if (t === ITEM_TYPE_RANGED && ![1, 2, 3, 4].includes(it.rangedWeaponType)) return false;
   return true;
 }
 
@@ -197,7 +199,7 @@ async function main() {
       const so = it.scalingOptions['0'];
       let v = 0;
       for (const [s, n] of Object.entries(so.stats || {})) v += (weights[s] || 0) * n;
-      if (it.type === 13) v += (slot === 15 ? wDps[1] : wDps[0]) * (so.unroundedDps || 0);
+      if (it.type === ITEM_TYPE_WEAPON) v += (slot === SLOT_OH ? wDps[1] : wDps[0]) * (so.unroundedDps || 0);
       return v;
     };
     const slots = {};
@@ -211,7 +213,7 @@ async function main() {
       const pick = new Set();
       for (const k of KINDS) for (const side of [1, 2]) {
         const inKind = ofKind(scored, k, side);
-        if (slot >= 14) for (const x of inKind.slice(0, SIM_TOP)) pick.add(x);
+        if (isWeaponSlot(slot)) for (const x of inKind.slice(0, SIM_TOP)) pick.add(x);
         for (const x of inKind.filter(y => special(y.it)).slice(0, SIM_TOP)) pick.add(x);
       }
       // The other ring, trinket or weapon in the reference gear: a unique item can't be worn twice.
@@ -228,10 +230,10 @@ async function main() {
       }));
       // Weapons are only trusted from the sim (speed and procs matter more than weights can say): the page picks
       // from simmed ones, and the rest only price what the player wears.
-      scored.sort((a, b) => (slot >= 14 ? b.simmed - a.simmed : 0) || b.val - a.val);
+      scored.sort((a, b) => (isWeaponSlot(slot) ? b.simmed - a.simmed : 0) || b.val - a.val);
       // [id, DPS change from the reference item, 1 if simmed else 0 (priced by stat weights)], best first.
       slots[key] = scored.map(x => [x.it.id, round(x.val), x.simmed]);
-      const trusted = scored.filter(y => slot < 14 || y.simmed);
+      const trusted = scored.filter(y => !isWeaponSlot(slot) || y.simmed);
       for (const k of KINDS) for (const side of [1, 2]) for (const isLater of [false, true]) {
         for (const x of ofKind(trusted, k, side).filter(y => !!opens.get(y.it.id) === isLater).slice(0, KEEP_TOP)) {
           // Order as in web/js/fields.js SRC.

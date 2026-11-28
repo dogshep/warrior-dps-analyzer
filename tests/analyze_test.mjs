@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseText } from '../web/js/logparser.js';
-import { analyzeFight, buildRequest, detectConsumes, compareToSim, aplSpellNames, safeNames, enchantName, consumesFor, missingConsumes, suggestions, DEFAULT_TARGET, LOG_TO_SIM_SLOTS } from '../web/js/analyze.js';
+import { analyzeFight, buildRequest, detectConsumes, compareToSim, aplSpellNames, safeNames, enchantName, consumesFor, missingConsumes, suggestions, DEFAULT_TARGET } from '../web/js/analyze.js';
+import { LOG_TO_SIM_SLOTS } from '../web/js/slots.js';
 
 const text = readFileSync(new URL('./fixture-WoWCombatLog.txt', import.meta.url), 'utf8');
 const parser = parseText(text);

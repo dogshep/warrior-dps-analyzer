@@ -122,6 +122,7 @@ Rerun `make-sample.mjs` after changing the log, how results are shown, or the si
 | `web/js/analyze.js` | Fight metrics, the wowsims request, sim comparison and suggestions |
 | `web/js/render.js`, `web/js/tips-ui.js` | Builds the results HTML (no DOM access, tested) and folds the tips list |
 | `web/js/upgrades-ui.js` | The "Gear upgrades" flow: picks candidates, runs the two sim passes, shows the table and AH prices |
+| `web/js/slots.js` | The one table of the 17 equipment slots (names, item types, log positions, pairs) |
 | `web/js/fields.js`, `web/js/format.js`, `web/js/errors.js`, `web/js/sim-config.js` | Names for the positions in the compact tables, shared formatting helpers, error types, sim iteration limits |
 | `web/js/cooldowns.js` | Cooldown timing (missed uses, holding for execute, per-pull view on dungeon runs) |
 | `web/js/rage.js` | Rage read (Heroic Strike starving or overcapping) and the execute phase report |
