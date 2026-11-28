@@ -235,7 +235,6 @@ $('who').onchange = fillFights;
 async function loadWcl(link) {
   const ref = wcl.parseReportUrl(link);
   if (!ref) { $('wclStatus').textContent = 'That does not look like a Warcraft Logs report link.'; return; }
-  if (!wcl.token() && !(await wcl.hasProxy())) return wcl.signIn(link).catch(wclError);
   $('wclStatus').textContent = 'Loading the report…';
   try {
     report = await wcl.loadReport(ref.code);
@@ -254,21 +253,20 @@ async function loadWcl(link) {
   prewarm();
 }
 
+// A private report (or one the site can't reach) asks before sending the viewer off to sign in.
 function wclError(e, link) {
-  if (e.needsAuth && link) return wcl.signIn(link);
   $('wclStatus').innerHTML = `<span class="warn">${esc(e.message || e)}</span>`;
+  if (e.needsAuth && link) {
+    const b = document.createElement('button');
+    b.className = 'link';
+    b.textContent = 'Sign in to Warcraft Logs';
+    b.onclick = () => wcl.signIn(link).catch(wclError);
+    $('wclStatus').append(' ', b);
+  }
 }
 
 $('wclGo').onclick = () => loadWcl($('wcl').value);
 $('wcl').onkeydown = e => { if (e.key === 'Enter') loadWcl($('wcl').value); };
-$('wclClient').value = wcl.clientId() === wcl.WCL_CLIENT_ID ? '' : wcl.clientId();
-$('wclClient').onchange = () => {
-  if (!wcl.setClientId($('wclClient').value)) {
-    $('wclStatus').innerHTML = '<span class="warn">That is not a v2 API client id (it looks like 01a2b3c4-…). Using this site\'s client.</span>';
-    $('wclClient').value = '';
-  }
-};
-$('wclOut').onclick = () => { wcl.signOut(); $('wclStatus').textContent = 'Signed out of Warcraft Logs.'; };
 wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
 // Gear upgrades. Each candidate is one sim of the player's gear with one item swapped, compared with a sim of their
 // current gear. Two sims of different gear drift apart in their random rolls, so the fight count sets how

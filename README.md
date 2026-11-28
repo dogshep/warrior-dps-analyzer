@@ -108,7 +108,8 @@ Private reports need the viewer to sign in, which needs a public Warcraft Logs A
 2. Name it (for example "Warrior DPS Analyzer"), set the redirect URL to `https://dogshep.github.io/warrior-dps-analyzer/`, and tick **Public client**.
 3. Put its client id in `WCL_CLIENT_ID` in `web/js/wcl.js`. A client id is not a secret.
 
-For a local copy, add `http://localhost:8000/` as a second redirect URL, or paste your own client id under "Warcraft Logs settings" on the page.
+The page only offers sign-in when a report fails to load because it is private. For a local copy, add
+`http://localhost:8000/` as a second redirect URL.
 
 `node tests/wcl_mock.mjs tests/fixture-WoWCombatLog.txt` turns the sample log into Warcraft Logs API responses, for testing the import offline.
 
