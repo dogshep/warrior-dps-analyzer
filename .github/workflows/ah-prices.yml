@@ -1,0 +1,52 @@
+name: Auction house prices
+
+# Every 3 hours: fetch WoW Forever auction house prices for the crafted items the "Gear upgrades" section can
+# suggest (scripts/ah-prices.mjs) and publish them as prices.json on the `ah-prices` branch, which the page reads
+# from raw.githubusercontent.com. The branch holds one commit, replaced each run.
+#
+# Needs the repo secrets BNET_CLIENT_ID and BNET_CLIENT_SECRET (a free client from develop.battle.net). This job
+# runs only this repo's code; it never checks out wowsims.
+on:
+  schedule:
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ah-prices
+  cancel-in-progress: false
+
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Test the price summary
+        run: node tests/ah_prices_test.mjs
+      - name: Get the live upgrade list
+        run: curl -fsS --retry 3 -o "$RUNNER_TEMP/upgrades.json" https://dogshep.github.io/warrior-dps-analyzer/sim/upgrades.json
+      - name: Fetch prices
+        env:
+          BNET_CLIENT_ID: ${{ secrets.BNET_CLIENT_ID }}
+          BNET_CLIENT_SECRET: ${{ secrets.BNET_CLIENT_SECRET }}
+        run: |
+          if [ -z "$BNET_CLIENT_ID" ] || [ -z "$BNET_CLIENT_SECRET" ]; then
+            echo "::error::Set the BNET_CLIENT_ID and BNET_CLIENT_SECRET repo secrets."; exit 1
+          fi
+          node scripts/ah-prices.mjs "$RUNNER_TEMP/upgrades.json" "$RUNNER_TEMP/prices.json"
+      - name: Publish to the ah-prices branch
+        run: |
+          cp "$RUNNER_TEMP/prices.json" prices.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout --orphan ah-prices-new
+          git rm -rq --cached .
+          git add prices.json
+          git commit -qm "Auction house prices $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -f origin HEAD:refs/heads/ah-prices

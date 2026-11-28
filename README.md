@@ -54,6 +54,17 @@ The page picks the fight count (200 to 1,000) so the run takes about a minute, r
 CPU cores (up to 4), shows the margin on each gain, and stops at 2 minutes whatever happens. In headless
 Chromium on 4 cores the sample log takes about 50 to 55 seconds for 8, 16 or 24 items.
 
+### Auction house prices for crafted upgrades
+
+Crafted upgrades show an approximate gold cost: the lowest buyout (and the median when several are listed) on the
+auction house the viewer picks (US or EU, realm type, their log's faction). `.github/workflows/ah-prices.yml` runs
+`scripts/ah-prices.mjs` every 3 hours. It reads Blizzard's Game Data API for WoW Forever
+(`/data/wow/ruleset/{ruleset}/auctions/{house}`, namespace `dynamic-forever-{region}`; not documented by Blizzard
+yet), keeps only the crafted items in the live `upgrades.json`, and force-pushes a small `prices.json` to the
+`ah-prices` branch, which the page reads from raw.githubusercontent.com. The page says when Blizzard's data was
+last updated beside the price choices. Needs the repo secrets `BNET_CLIENT_ID` and `BNET_CLIENT_SECRET` (a free
+client from develop.battle.net). Prices are Blizzard's data, credited on the page.
+
 ## Recording a good log
 
 - Type `/combatlog` before you pull. The file goes to `World of Warcraft/_forever_/Logs/`.
@@ -102,6 +113,7 @@ for t in tests/*_test.mjs; do node "$t" || break; done     # unit tests (the dep
 | `worker/` | Cloudflare Worker that loads public Warcraft Logs reports with no sign-in ([worker/README.md](worker/README.md)) |
 | `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |
 | `scripts/precompute-upgrades.mjs` | Ranks gear per rotation for the upgrades section (`web/sim/upgrades.json`) |
+| `scripts/ah-prices.mjs`, `web/js/prices.js` | Auction house prices for crafted upgrades (`ah-prices` branch) |
 
 Sim by [WoWSims](https://github.com/wowsims/forever) (MIT).
 
