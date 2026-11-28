@@ -167,9 +167,8 @@ async function findUpgrades() {
     }
     clearTimeout(timer);
     const secs = (performance.now() - t0) / 1000;
-    $('upgNote').textContent = `Screened ${res1.length} item${res1.length === 1 ? '' : 's'} (${s1} fights each)${refined ? ` and re-simmed the ${refined} that could win a slot (${finalN} fights each)` : ''}, against your current gear, in ${secs.toFixed(1)}s on ${threads}.` +
-      (capped ? ` Stopped at the ${UPGRADE_TIME_CAP_MS / 1000}s limit.` : '') +
-      ` ± is the sim's margin for each gain (95%). The candidates were picked from items ranked ahead of time in pre-raid gear.`;
+    $('upgNote').innerHTML = `Simmed ${res1.length} item${res1.length === 1 ? '' : 's'} against your gear in ${secs.toFixed(0)}s.` +
+      (capped ? ` Stopped at the ${UPGRADE_TIME_CAP_MS / 1000}s limit.` : '') + ' <a href="#how">How this works</a>';
   } catch (e) {
     $('upgOut').innerHTML = e instanceof CancelledError && e.capped ? `<p class="hint">The sim of your current gear did not finish within ${UPGRADE_TIME_CAP_MS / 1000}s. Try fewer items.</p>`
       : e instanceof CancelledError ? '<p class="hint">Cancelled.</p>' : `<p class="warn">${esc(e.message || e)}</p>`;

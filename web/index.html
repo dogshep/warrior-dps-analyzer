@@ -12,16 +12,16 @@
 <body>
 <header>
   <h1>Warrior DPS Analyzer</h1>
-  <p class="sub">For WoW Forever DPS warriors. Drop in a combat log to get a short list of things to try next run. Everything runs in your browser and nothing is uploaded.</p>
+  <p class="sub">For WoW Forever DPS warriors. Drop in a combat log for a short list to try next run. Nothing is uploaded.</p>
 </header>
 <main>
   <section id="drop" class="card drop">
     <input type="file" id="file" accept=".txt,.log" hidden>
     <p><strong>Drop <code>WoWCombatLog-*.txt</code> here</strong> or <button id="pick" class="link">choose a file</button></p>
-    <p class="hint">Find it in <code>World of Warcraft/_forever_/Logs/</code>. Type <code>/combatlog</code> before a raid, and turn on <em>Advanced Combat Logging</em> (System, Network) so your gear is recorded.</p>
+    <p class="hint">No log yet? <a href="#how">How to record one</a></p>
     <div id="progress" class="bar" hidden><span></span></div>
     <p id="loadStatus" role="status"></p>
-    <p class="hint">No log handy? <button id="sampleGo" class="link">Try a sample report</button> to see what the analyzer finds.</p>
+    <p class="hint">Or <button id="sampleGo" class="link">try a sample report</button>.</p>
   </section>
 
   <section class="card">
@@ -52,9 +52,7 @@
 
   <section id="out" hidden>
     <div id="sampleBanner" class="card sample-banner" hidden>
-      <h2>Sample report</h2>
-      <p>This is a made-up Fury warrior on Onyxia, not a real player. The results were worked out ahead of time, so nothing is simmed and it loads at once. Drop in your own log or paste a Warcraft Logs link above to get yours.</p>
-      <p class="hint"><button id="sampleReal" class="link">Run the sample log for real</button> to watch the sim work on it, or <a href="sample/sample-WoWCombatLog.txt" download>download the sample log</a>.</p>
+      <p><b>Sample report:</b> a made-up Fury warrior on Onyxia. Drop in your own log above to get yours. <a href="#how">How this works</a></p>
     </div>
     <div class="stats" id="stats"></div>
     <div class="card">
@@ -75,7 +73,7 @@
     </details>
     <div class="card" id="upg">
       <h2>Gear upgrades</h2>
-      <p class="hint">The best next item for each slot and where to get it. A short list of likely upgrades, ranked ahead of time, is simmed in your own gear and fight, with your enchants kept on the slot.</p>
+      <p class="hint">The best next item for each slot, simmed in your own gear.</p>
       <div class="row inline opts">
         <span class="hint">Sources:</span>
         <label class="chk"><input type="checkbox" class="upgKind" value="d" checked> Dungeons</label>
@@ -98,11 +96,18 @@
     </div>
     <div class="grid">
       <details class="card fold"><summary><h2>Abilities</h2></summary><table id="abil"></table></details>
-      <details class="card fold"><summary><h2>Gear from the log</h2></summary><table id="gear"></table></details>
+      <details class="card fold"><summary><h2>Your gear</h2></summary><table id="gear"></table></details>
     </div>
   </section>
 </main>
 <footer>
+  <details id="how" class="how">
+    <summary>How this works</summary>
+    <p><b>Your log.</b> Find it in <code>World of Warcraft/_forever_/Logs/</code>. Type <code>/combatlog</code> before you play, and turn on <em>Advanced Combat Logging</em> (System, Network) so your gear is recorded. Everything runs in your browser and nothing is uploaded.</p>
+    <p><b>The sim.</b> Your fight is replayed in the wowsims Forever sim with your gear, the buffs and consumables seen in your log, and the matching rotation. "Possible gain" is the sim's DPS minus yours. On a dungeon run, your DPS counts only time in combat and the sim fights a typical pull. Cooldown "possible" uses count one use on each pull of 20s or more (any pull for Bloodrage) that the cooldown was back for.</p>
+    <p><b>Gear upgrades.</b> A short list of likely upgrades, ranked ahead of time in pre-raid gear, is simmed in your own gear and fight with your enchants kept. Every item gets a quick sim, then the best candidates get a longer one. ± is the sim's 95% margin. Crafted prices are the lowest buyout on Blizzard's auction house data, and materials are what one craft's reagents cost from the cheapest listings (hover for the list). Prices move, so check in game.</p>
+    <p><b>The sample.</b> The sample report was worked out ahead of time, so it loads at once. <button id="sampleReal" class="link">Run the sample log for real</button> or <a href="sample/sample-WoWCombatLog.txt" download>download it</a>.</p>
+  </details>
   <p>Sim: <a href="https://github.com/wowsims/forever" target="_blank" rel="noopener">wowsims/forever</a> <span id="simver"></span>. Priorities follow the wowsims rotations. For the why behind each tip, see the Forever Fury guides from <a href="https://www.warcrafttavern.com/forever/guides/fury-warrior/" target="_blank" rel="noopener">Warcraft Tavern</a> and <a href="https://www.icy-veins.com/wow-forever/fury-warrior-melee-dps-pve-rotation-cooldowns-abilities" target="_blank" rel="noopener">Icy Veins</a>.</p>
 </footer>
 <script type="module" src="js/app.js"></script>

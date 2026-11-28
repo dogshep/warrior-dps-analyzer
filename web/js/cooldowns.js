@@ -127,7 +127,7 @@ export function cooldownTips(rows, fight, { isRun, executeStart }) {
           tail ? `It was ready again at ${at(tail[0])} and the fight ended at ${at(fight.end)}. Even a short window is worth pressing it.` : '',
           r.name === 'Recklessness' && r.availableAt > fight.start ? 'Save it for bosses, since it has a 30 minute cooldown.' : '',
         ].filter(Boolean).join(' ');
-        out.push({ kind: 'cooldown', title: `${r.name}: ${r.uses.length} of ${r.possible} possible uses`, detail, gain: r.gain });
+        out.push({ kind: 'cooldown', title: r.possible <= 1 ? `${r.name}: ${r.uses.length ? 'used' : 'not used'}` : `${r.name}: ${r.uses.length} of ${r.possible} possible uses`, detail, gain: r.gain });
       } else if (r.holdForExecute) {
         out.push({ kind: 'cooldown', title: `Hold your last ${r.name} for execute`, detail: `Your last ${r.name} was at ${at(r.uses[r.uses.length - 1])}, and execute started at ${at(executeStart)}. Pressing it then would not have cost a use, and it hits harder with Execute.`, gain: null });
       }

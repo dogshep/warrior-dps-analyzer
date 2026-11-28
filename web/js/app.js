@@ -12,6 +12,8 @@ import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detec
 import { AuthRequiredError, CancelledError } from './errors.js';
 
 $('hsRage').textContent = HS_EXECUTE_RAGE;
+// Every "How this works" link opens the fold in the footer.
+document.addEventListener('click', e => { if (e.target.closest?.('a[href="#how"]')) $('how').open = true; });
 const PRESETS = ['fury', 'fury_2h', 'arms'];
 
 const data = (async () => {
@@ -144,7 +146,7 @@ async function analyze() {
     ideal.missing = missingConsumes(cons.found);
     renderStats(a, s, ideal);
     renderTips(suggestions(a, s, ideal, aplSpellNames(apls[a.preset], names)), s && s.simDps - a.dps);
-    $('simnote').textContent = `${a.isRun ? `Dungeon run: your DPS counts only time in combat, and the sim fights a typical ${Math.round(a.simDur)}s pull, scaled to your ${a.pulls} pulls. ` : ''}Sim: ${a.preset.replace('_', ' ')} rotation, ${iterations} iterations of a ${Math.round(a.simDur || a.dur)}s fight against ${a.targetCount} target${a.targetCount > 1 ? 's' : ''}, with the buffs and consumables seen in your log. Consumables seen: ${cons.found.map(f => f.name).join(', ') || 'none'}.`;
+    $('simnote').innerHTML = `Sim: ${a.preset.replace('_', ' ')} rotation, ${iterations} fights of ${Math.round(a.simDur || a.dur)}s. <a href="#how">How this works</a>`;
   } catch (e) {
     renderTips(suggestions(a, null, null));
     $('simnote').innerHTML = e instanceof CancelledError
