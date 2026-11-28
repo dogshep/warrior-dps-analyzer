@@ -1,7 +1,7 @@
 // Direct checks for the combat log parser. Usage: node tests/logparser_test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { splitTop, parseGroup, parseText, parseFile, LogParser, PULL_GAP_MS } from '../web/js/logparser.js';
+import { splitTop, parseGroup, parseText, parseFile, LogParser, makePlayer, PULL_GAP_MS } from '../web/js/logparser.js';
 
 // --- tokenising ---
 assert.deepEqual(splitTop('a,"b,c",(1,2),[3,(4,5)],d'), ['a', '"b,c"', '(1,2)', '[3,(4,5)]', 'd']);
@@ -10,6 +10,13 @@ assert.deepEqual(parseGroup('(1,"x y",(2,3),())'), [1, 'x y', [2, 3], []]);
 assert.equal(parseGroup('"quoted"'), 'quoted');
 assert.equal(parseGroup('nil'), 'nil');
 assert.equal(parseGroup('0x511'), 0x511);
+
+// --- the Parsed contract: a fresh parser already has every field the analysis reads ---
+const fresh = new LogParser();
+assert.ok(fresh.targetHp instanceof Map && fresh.debuffs.length === 0 && fresh.fightCache instanceof Map);
+assert.deepEqual(Object.keys(fresh.player('g')).sort(), Object.keys(makePlayer('g')).sort());
+assert.equal(makePlayer('g').isWarrior, false);
+assert.equal(makePlayer('g', true).isWarrior, true);
 
 // --- the shared fixture ---
 const text = readFileSync(new URL('./fixture-WoWCombatLog.txt', import.meta.url), 'utf8');

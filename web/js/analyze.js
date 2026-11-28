@@ -198,7 +198,7 @@ export function analyzeFight(parser, guid, fight, names) {
 
   // Execute phase start: first time the main target was under 20% health, else the last 20% of the fight.
   let executeStart = fight.start + (fight.end - fight.start) * 0.8, executeKnown = false;
-  const hp = parser.targetHp?.get(mainTarget);
+  const hp = parser.targetHp.get(mainTarget);
   if (hp) { const e = hp.find(([t, h]) => inFight(fight, t) && h <= 0.2); if (e) { executeStart = e[0]; executeKnown = true; } }
 
   // Rage samples during the fight.
@@ -259,7 +259,7 @@ export function buildRequest(a, parser, names, apls, opts = {}) {
   for (const name of seen) for (const [re, fn] of BUFF_RULES) if (re.test(name)) fn(b);
 
   const debuffs = {};
-  for (const d of parser.debuffs || []) if (d.dst === a.mainTarget && inFight(a.fight, d.t)) for (const [re, fn] of DEBUFF_RULES) if (re.test(d.name)) fn(debuffs);
+  for (const d of parser.debuffs) if (d.dst === a.mainTarget && inFight(a.fight, d.t)) for (const [re, fn] of DEBUFF_RULES) if (re.test(d.name)) fn(debuffs);
 
   const consumes = detectConsumes(a, parser, names);
   const useConsumes = opts.consumes === 'ideal' ? consumesFor(a.preset) : consumes.spec;
