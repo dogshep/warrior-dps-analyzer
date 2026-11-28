@@ -1,6 +1,6 @@
 // Unit checks for picking upgrade candidates. Usage: node tests/upgrades_test.mjs
 import assert from 'node:assert/strict';
-import { pickCandidates, openNow, swapRequest, bestPerSlot, poolFor, budget, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from '../web/js/upgrades.js';
+import { pickCandidates, openNow, swapRequest, bestPerSlot, poolFor, budget, yellowMiss, breaksHitCap, setChange, withoutSetRequest, refineSet } from '../web/js/upgrades.js';
 import { auditEnchants } from '../web/js/analyze.js';
 
 // [id, value vs the reference item, simmed]; items: [source, faction, phase, group]
@@ -105,4 +105,16 @@ const before = Date.parse('2026-12-01T12:00:00'), after = Date.parse('2026-12-09
 assert.deepEqual(pickCandidates(gear, t2, 'fury', 0, { now: before }).map(x => x.id), [32]);
 assert.deepEqual(pickCandidates(gear, t2, 'fury', 0, { now: after }).map(x => x.id), [31, 32]);
 assert.equal(openNow(['x', 0, 1, 'd']), true);
+// Screening: drop what can't win its slot or can't be a gain, keep every slot's leader, cut the rest to maxKeep.
+const scr = [
+  { slot: 0, id: 1, dps: 1100, err: 5 }, // clear leader of head
+  { slot: 0, id: 2, dps: 1060, err: 5 }, // 40 behind: can't catch up
+  { slot: 0, id: 3, dps: 1095, err: 5 }, // within noise of the leader: keep
+  { slot: 1, id: 4, dps: 1000.5, err: 0.2 }, // +0.5 at best +0.9: not a gain
+  { slot: 2, id: 5, dps: 1003, err: 4 }, // +3 but noisy: keep
+  { slot: 2, id: 6, dps: 1001, err: 4 },
+];
+assert.deepEqual(refineSet(scr, 1000).map(r => r.id), [1, 5, 3, 6]);
+assert.deepEqual(refineSet(scr, 1000, { maxKeep: 2 }).map(r => r.id), [1, 5], 'the cut keeps the slot leaders first');
+assert.deepEqual(refineSet([], 1000), []);
 console.log('upgrades_test: ok');

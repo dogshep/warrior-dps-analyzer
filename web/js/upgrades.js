@@ -148,3 +148,17 @@ export function bestPerSlot(results, base, minGain = 1) {
   for (const r of [...best.values()].sort((a, b) => b.gain - a.gain)) if (!seen.has(r.id)) seen.set(r.id, r);
   return [...seen.values()];
 }
+
+// Which screened candidates are worth a longer sim. results: [{slot, id, dps, err}] with err the sim's standard
+// error of the gain, base: the current gear's DPS. A candidate is dropped when it can't be a gain (its best case is
+// under minGain) or can't beat the best of its slot (its best case is under that one's worst case). The slot leaders
+// come first, then the rest by gain, so the cut to maxKeep drops the long shots first. What is cut keeps its screened gain.
+export function refineSet(results, base, { maxKeep = 8, minGain = 1, z = 2 } = {}) {
+  const rows = results.map(r => ({ r, gain: r.dps - base, hi: r.dps - base + z * r.err, lo: r.dps - base - z * r.err }));
+  const bestLo = new Map();
+  for (const x of rows) bestLo.set(x.r.slot, Math.max(bestLo.get(x.r.slot) ?? -Infinity, x.lo));
+  const live = rows.filter(x => x.hi >= minGain && x.hi >= bestLo.get(x.r.slot)).sort((a, b) => b.gain - a.gain);
+  const seen = new Set();
+  const leaders = live.filter(x => !seen.has(x.r.slot) && seen.add(x.r.slot));
+  return [...leaders, ...live.filter(x => !leaders.includes(x))].slice(0, maxKeep).map(x => x.r);
+}
