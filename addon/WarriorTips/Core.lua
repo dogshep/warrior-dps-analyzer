@@ -270,8 +270,7 @@ end)
 
 local lastTip, lastByKey = 0, {}
 
--- Show a tip. key is the setting that turns it on; repeats of the same tip
--- (same id, default key) are throttled for `again` seconds (default 20).
+-- Show a message on the tip frame.
 function WT.Show(msg)
   text:SetText(msg)
   frame:SetAlpha(1)
@@ -280,6 +279,8 @@ function WT.Show(msg)
   if WT.db.sound then PlaySound(SOUNDKIT.RAID_WARNING) end
 end
 
+-- Show a tip. key is the setting that turns it on; repeats of the same tip
+-- (same id, default key) are throttled for `again` seconds (default 20).
 function WT.Tip(key, msg, again, id)
   local db = WT.db
   if not db or not db.enabled or not WT.isWarrior or not db.tips[key] then return end

@@ -47,7 +47,7 @@ live game. [`data/forever-availability.json`](data/forever-availability.json) is
 corrects them, with the reason and source for each entry. The build (`scripts/make_names.py` for enchants,
 `scripts/precompute-upgrades.mjs` via `scripts/availability.mjs` for gear) reads it; the page never needs editing.
 Dated entries release themselves: raid loot, Head of Onyxia rewards, Onyxia scale crafts and The Watchers'
-(Barrow Deeps) reputation rings show up from 9 December 2026, when Forever opens its raids, without a rebuild.
+(Barrow Deeps) reputation rings show up once Forever opens its raids (the date is in `data/forever-availability.json`), without a rebuild.
 
 Two sims of different gear don't share their dice rolls, so a gain from 100 fights is only good to about ±13 DPS.
 The page picks the fight count (200 to 1,000) so the run takes about a minute, runs sims side by side on spare
@@ -90,13 +90,14 @@ The page footer shows which wowsims commit is live.
 
 ## Running locally
 
-Needs Go (the version in wowsims' `go.mod`), Python 3 with `pip install grpcio-tools==1.85.4`, and Node.
+Needs Go (the version in wowsims' `go.mod`), Python 3 with `pip install grpcio-tools==1.85.4`, and Node (the version in `.node-version`).
 
 ```sh
 scripts/build-sim.sh            # clones wowsims/forever into .wowsims and builds web/sim/ (SKIP_UPGRADES=1 skips the slow gear ranking)
 python3 -m http.server -d web   # then open http://localhost:8000
 node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis in the terminal
-for t in tests/*_test.mjs; do node "$t" || break; done     # unit tests (the deploy runs these too)
+npm test                        # unit tests: every tests/*_test.mjs (CI runs this on every pull request)
+npm run test:addon              # addon tests; needs lua5.1
 ```
 
 `tests/make_fixture.mjs` writes the synthetic sample log in `tests/`. It plays a deliberately sloppy fury rotation and exists to smoke test the pipeline.
@@ -122,12 +123,18 @@ Rerun `make-sample.mjs` after changing the log, how results are shown, or the si
 | `web/js/cooldowns.js` | Cooldown timing (missed uses, holding for execute, per-pull view on dungeon runs) |
 | `web/js/rage.js` | Rage read (Heroic Strike starving or overcapping) and the execute phase report |
 | `web/js/simpool.js`, `web/js/sim-worker.js` | Downloads the WASM sim once and runs it in up to 4 Web Workers |
+| `web/js/sample.js`, `web/sample/` | The "Try a sample report" demo and its made-up log and snapshot |
 | `web/js/upgrades.js` | Picks upgrade candidates per slot and reads the sim results |
 | `web/js/wcl.js`, `web/js/wcl-queries.js` | Warcraft Logs import: through the Worker, or with the viewer's own sign-in |
 | `worker/` | Cloudflare Worker that loads public Warcraft Logs reports with no sign-in ([worker/README.md](worker/README.md)) |
 | `scripts/build-sim.sh`, `scripts/make_names.py` | Build the sim and the item/spell name tables into `web/sim/` |
 | `scripts/precompute-upgrades.mjs` | Ranks gear per rotation for the upgrades section (`web/sim/upgrades.json`) |
 | `scripts/ah-prices.mjs`, `web/js/prices.js` | Auction house prices for crafted upgrades (`ah-prices` branch) |
+| `scripts/availability.mjs`, `data/forever-availability.json` | The hand-kept list of what Forever has not released yet, applied at build time |
+| `scripts/make-sample-log.mjs`, `scripts/make-sample.mjs` | Regenerate the sample report (see above; the second needs Playwright installed) |
+| `tests/` | Unit tests (`*_test.mjs`, run by `npm test`), the sample log fixture, and a few dev CLIs (`run_analysis.mjs`, `run_wcl.mjs`, `wcl_mock.mjs`) |
+| `addon/WarriorTips/` | The in-game addon |
+| `SIM_REF` | The pinned wowsims/forever commit |
 
 Sim by [WoWSims](https://github.com/wowsims/forever) (MIT).
 
@@ -153,7 +160,7 @@ The page only offers sign-in when a report fails to load because it is private. 
 
 The page sets a strict Content-Security-Policy (scripts and workers from this site only, network calls only to
 Warcraft Logs and the Worker), escapes everything it shows from a log, checks the OAuth `state` on sign-in, and caps
-log size and sim length. The deploy builds wowsims in a job with no secrets, as described above.
+the length of one log line and the sim iteration count. The deploy builds wowsims in a job with no secrets, as described above.
 
 ## In-game addon
 

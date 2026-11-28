@@ -22,7 +22,7 @@ A response header `X-Cache: hit` shows an answer came from the cache.
 3. **GitHub secrets.** In the repo, go to **Settings → Secrets and variables → Actions** and add
    `WCL_SERVER_CLIENT_ID`, `WCL_SERVER_CLIENT_SECRET` and `CLOUDFLARE_API_TOKEN`.
    If your Cloudflare token can see more than one account, also add `CLOUDFLARE_ACCOUNT_ID`.
-4. Run the **Deploy** workflow (Actions → Deploy → Run workflow). It deploys the Worker, stores the two
+4. Run the **Build sim and deploy** workflow (Actions → Build sim and deploy → Run workflow). It deploys the Worker, stores the two
    Warcraft Logs values as Worker secrets, and writes the Worker's address into the page.
 
 Without these secrets the deploy skips the Worker and the page keeps sign-in only.

@@ -19,7 +19,7 @@ What Forever lets addons read in combat (probe run on 2026-11-27): spell usabili
 | Tip | Setting | How it knows |
 | --- | --- | --- |
 | "Execute phase" when Execute becomes usable on a boss or elite, with Recklessness / Death Wish if they're ready on a boss | `execute` (on) | Spell usability |
-| "Boss pull: Death Wish ready" when a boss encounter starts or you target a skull-level boss, and "Death Wish is ready again" mid boss fight | `cooldowns` (on) | A clean cooldown read just before combat restrictions switch on, plus your own casts and the cooldown length (learned from out-of-combat reads, so talents count) |
+| "Boss pull: Death Wish ready" (it lists whichever of Death Wish and Blood Fury are ready) when a boss encounter starts or you target a skull-level boss, and "Death Wish is ready again" mid boss fight | `cooldowns` (on) | A clean cooldown read just before combat restrictions switch on, plus your own casts and the cooldown length (learned from out-of-combat reads, so talents count) |
 | "Rage capped: Heroic Strike" line under the tips while rage is at the cap | `rage` (on) | Rage is secret, so the game colors this line from your rage through a color curve: it is invisible below the cap and gold at or above it. Display only, so it is not counted in the report |
 | "Battle Shout drops in 5s" / "Battle Shout is down" | `shout` (on) | The buff's time left before the pull, plus your own Battle Shout casts |
 | "Overpower!" / "Revenge!" when they light up | `reactive` (off) | Spell usability |

@@ -165,6 +165,24 @@ for _, s in ipairs(shown) do print(("  +%3ds  %s"):format(s.t - pull, s.text)) e
 print("== rage indicator colored from a secret value " .. indicatorShown .. " times")
 print("== chat")
 for _, m in ipairs(printed) do print("  " .. m) end
+-- Assertions: the tips that fired, in order, and the lines of the report card.
+local expectTips = { "Boss pull: Death Wish ready" }
+if not SECRET_MODE then expectTips[#expectTips + 1] = "Rage capped: queue Heroic Strike (Cleave on packs)" end
+for _, t in ipairs({ "Battle Shout drops in 5s", "Battle Shout is down: recast it", "Death Wish is ready again", "Execute phase: Recklessness + Death Wish ready, then Execute" }) do
+  expectTips[#expectTips + 1] = t
+end
+local gotTips = {}
+for _, s in ipairs(shown) do gotTips[#gotTips + 1] = s.text end
+assert(table.concat(gotTips, "\n") == table.concat(expectTips, "\n"), "tips shown:\n" .. table.concat(gotTips, "\n"))
+assert((indicatorShown > 0) == (SECRET_MODE and true or false), "rage indicator count: " .. indicatorShown)
+local function sawChat(text)
+  for _, m in ipairs(printed) do if m:find(text, 1, true) then return true end end
+  return false
+end
+for _, line in ipairs({
+  "Boss fight 3:25, 292 DPS.", "Execute phase 15s: 5 Executes.", "Death Wish used.",
+  "Bloodthirst: 21 casts, about 32 possible.", "Recklessness was ready on this boss and not used.",
+}) do assert(sawChat(line), "report line missing: " .. line) end
 local errors = 0
 for _, m in ipairs(printed) do if m:find("error") and not m:find("^Warrior Tips:   ") then errors = errors + 1 end end
 if errors > 0 then print("FAILED: " .. errors .. " errors"); os.exit(1) end

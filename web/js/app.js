@@ -3,12 +3,14 @@ import * as wcl from './wcl.js';
 import { showSample, clearSample, sampleLog } from './sample.js';
 import { mmss } from './cooldowns.js';
 import * as pool from './simpool.js';
+import { HS_EXECUTE_RAGE } from './rage.js';
 import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
 import { loadPrices, priceFor, materialsList, houseKey, gold, age } from './prices.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+$('hsRage').textContent = HS_EXECUTE_RAGE;
 const PRESETS = ['fury', 'fury_2h', 'arms'];
 
 const data = (async () => {

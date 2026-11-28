@@ -1,0 +1,13 @@
+{
+  "name": "warrior-dps-analyzer",
+  "private": true,
+  "type": "module",
+  "description": "Warrior DPS Analyzer: static page, Cloudflare Worker and in-game addon. Dev scripts only; the page has no build step.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node tests/run-all.mjs",
+    "test:addon": "lua5.1 tests/addon/run.lua && lua5.1 tests/addon/run.lua secret"
+  }
+}

@@ -3,7 +3,6 @@
 // Log inventory slots 1..19 (0-based here) in the order wowsims' EquipmentSpec wants them.
 const LOG_TO_SIM_SLOTS = [0, 1, 2, 14, 4, 8, 9, 5, 6, 7, 10, 11, 12, 13, 15, 16, 17];
 const SLOT_NAMES = ['Head', 'Neck', 'Shoulder', 'Back', 'Chest', 'Wrist', 'Hands', 'Waist', 'Legs', 'Feet', 'Ring 1', 'Ring 2', 'Trinket 1', 'Trinket 2', 'Main hand', 'Off hand', 'Ranged'];
-// Slots a level 60 warrior normally enchants (sim slot indexes).
 // Item type of each sim slot (1 head ... 13 weapon), for slot-specific enchant names.
 const SLOT_ITEM_TYPE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 14];
 // The DPS warrior enchants per sim slot, best first, from the wowsims Forever enchant list. Any enchant not
