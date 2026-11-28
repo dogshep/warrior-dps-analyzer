@@ -65,3 +65,4 @@ label.chk { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; 
 #upgOut .g { color: var(--good); white-space: nowrap; }
 #upgOut .src { color: var(--muted); font-size: 13px; }
 .tag { font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 6px; color: var(--muted); white-space: nowrap; }
+.warn.small { font-size: 13px; }

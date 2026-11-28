@@ -21,6 +21,13 @@ Simming every item for every player would take far too long, so the work is spli
 - **In the browser** the page takes the best one or two of those per slot that beat what the player wears (8, 16
   or 24 in all) from the sources ticked (dungeons, raids, crafted, quests, vendors, reputation, PvP), sims each one
   swapped into the player's own gear and fight, and lists the real gains.
+- **Hit cap and set bonuses.** Before simming, the page reads the sim's character sheet for each swap (a few
+  milliseconds each). A swap that would leave special attacks missing, when they don't now (or more often than now),
+  is left out and listed as such. A swap that breaks a set bonus is flagged, with what the bonus is worth: one extra
+  sim of the gear without that item, its stats added back, against the current gear.
+- **Enchants** are only suggested when they are in Forever: not the ones wowsims marks unavailable (such as the
+  Zul'Gurub and Naxxramas shoulder enchants), and not Living Stats or Grand Crusader, which wowsims lists but Forever
+  does not have yet.
 
 Two sims of different gear don't share their dice rolls, so a gain from 100 fights is only good to about ±13 DPS.
 The page picks the fight count (200 to 1,000) so the run takes about a minute, runs sims side by side on spare

@@ -2,8 +2,8 @@ import { parseFile } from './logparser.js';
 import * as wcl from './wcl.js';
 import { mmss } from './cooldowns.js';
 import * as pool from './simpool.js';
-import { pickCandidates, swapRequest, bestPerSlot } from './upgrades.js';
-import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
+import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
+import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -314,13 +314,42 @@ async function findUpgrades() {
     const probe = buildRequest(a, last.parser, names, apls, opts);
     const gear = probe.raid.parties[0].players[0].equipment.items;
     if (!gear.some(g => g.id)) throw new Error('No gear in this log, so there is nothing to compare against.');
-    const cands = pickCandidates(gear, upgradeTable, a.preset, a.combatant?.faction, { max: Number($('upgMax').value), kinds: upgradeKinds() });
-    if (!cands.length) { $('upgOut').innerHTML = `<p>${upgradeKinds() ? 'Nothing in the upgrade list beats what you wear from these sources. Try ticking more of them.' : 'Tick at least one source.'}</p>`; return; }
-    const { iters } = upgradePlan(cands.length);
+    // Twice the usual picks per slot, so there are spares for the ones the hit cap check drops.
+    const likely = pickCandidates(gear, upgradeTable, a.preset, a.combatant?.faction, { perSlot: 4, max: 200, kinds: upgradeKinds() });
+    if (!likely.length) { $('upgOut').innerHTML = `<p>${upgradeKinds() ? 'Nothing in the upgrade list beats what you wear from these sources. Try ticking more of them.' : 'Tick at least one source.'}</p>`; return; }
+    // The character sheet for the current gear and each swap (milliseconds each, no sim): hit and set bonuses.
+    bar('Checking hit and set bonuses…', 0);
+    const ohInfo = names.items[gear[15]?.id];
+    const dualWield = !!ohInfo && ohInfo[1] === 13;
+    const sheetNow = await pool.stats(probe);
+    const missNow = yellowMiss(sheetNow.remainingHit ?? 0, dualWield);
+    const checked = [], underCap = [];
+    for (const c of likely) {
+      const sh = await pool.stats(swapRequest(probe, c.slot, c.id));
+      const miss = yellowMiss(sh.remainingHit ?? 0, dualWield);
+      const sets = setChange(sheetNow.sets, sh.sets);
+      if (sheetNow.remainingHit != null && breaksHitCap(missNow, miss)) underCap.push({ ...c, miss });
+      else checked.push({ ...c, sets });
+    }
+    const cands = budget(checked, Number($('upgMax').value), 2);
+    // One sim per slot whose set bonus a candidate breaks: the gear without that item, its stats added back.
+    const setJobs = [...new Set(cands.filter(c => c.sets.lost.length).map(c => c.slot))].flatMap(slot => {
+      const it = gear[slot], si = names.setItems?.[it.id];
+      if (!si) return [];
+      const st = { ...si[0] };
+      const ench = it.enchant && names.enchantStats?.[it.enchant];
+      if (ench) for (const [k, v] of Object.entries(ench[SLOT_ITEM_TYPE[slot]] || Object.values(ench)[0])) st[k] = (st[k] || 0) + v;
+      return [{ slot, stats: st, pseudo: si[1] }];
+    });
+    if (!cands.length) {
+      $('upgOut').innerHTML = '<p>Every likely upgrade from these sources would put you under the hit cap.</p>' + underCapLine(underCap, names);
+      return;
+    }
+    const { iters } = upgradePlan(cands.length + setJobs.length);
     const base = buildRequest(a, last.parser, names, apls, { ...opts, iterations: iters });
     const t0 = performance.now();
     // Progress in units of one candidate sim; the current gear counts twice.
-    const total = cands.length + 2, done = new Map();
+    const total = cands.length + setJobs.length + 2, done = new Map();
     const tick = (k, w) => ({ stage, done: f }) => {
       if (stage !== 'sim') return;
       done.set(k, f * w);
@@ -329,7 +358,8 @@ async function findUpgrades() {
     };
     let capped = false;
     timer = setTimeout(() => { capped = true; cancelSim(); }, UPGRADE_TIME_CAP_MS);
-    const queue = [{ k: 'base', req: { ...base, simOptions: { ...base.simOptions, iterations: iters * 2 } }, w: 2 }, ...cands.map((c, i) => ({ k: i, c, req: swapRequest(base, c.slot, c.id), w: 1 }))];
+    const queue = [{ k: 'base', req: { ...base, simOptions: { ...base.simOptions, iterations: iters * 2 } }, w: 2 }, ...cands.map((c, i) => ({ k: i, c, req: swapRequest(base, c.slot, c.id), w: 1 })),
+      ...setJobs.map(j => ({ k: `set${j.slot}`, req: withoutSetRequest(base, j.slot, j.stats, j.pseudo), w: 1 }))];
     const out = new Map();
     await Promise.all(Array.from({ length: UPGRADE_WORKERS }, async (_, w) => {
       for (let job; (job = queue.shift());) {
@@ -347,7 +377,12 @@ async function findUpgrades() {
       const r = out.get(i);
       return r ? [{ ...c, dps: r.avg, err: Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n) }] : [];
     });
-    renderUpgrades(bestPerSlot(results, b.avg), gear, names, cands.filter((c, i) => out.has(i)));
+    // What each broken set bonus is worth: the current gear minus the same gear without the bonus.
+    const setCost = new Map(setJobs.filter(j => out.has(`set${j.slot}`)).map(j => {
+      const r = out.get(`set${j.slot}`);
+      return [j.slot, { dps: b.avg - r.avg, err: Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n) }];
+    }));
+    renderUpgrades(bestPerSlot(results, b.avg), gear, names, cands.filter((c, i) => out.has(i)), setCost, underCap);
     $('upgNote').textContent = `Simmed ${results.length} item${results.length === 1 ? '' : 's'} (${iters} fights each) and your current gear (${iters * 2}) in ${secs.toFixed(1)}s on ${UPGRADE_WORKERS} thread${UPGRADE_WORKERS > 1 ? 's' : ''}.` +
       (capped ? ` Stopped at the ${UPGRADE_TIME_CAP_MS / 1000}s limit; ${cands.length - results.length} were not simmed.` : '') +
       ` ± is the sim's margin for each gain (95%). The candidates were picked from items ranked ahead of time in pre-raid gear.`;
@@ -361,7 +396,18 @@ async function findUpgrades() {
   }
 }
 
-function renderUpgrades(rows, gear, names, cands) {
+// The candidates left out for the hit cap, best guess first, one per slot.
+function underCapLine(underCap, names) {
+  const seen = new Set(), list = [];
+  for (const c of underCap.sort((x, y) => (y.est ?? 0) - (x.est ?? 0))) {
+    if (seen.has(c.slot)) continue;
+    seen.add(c.slot);
+    list.push(`${SLOT_NAMES[c.slot]}: ${names.items[c.id]?.[0] || `#${c.id}`} (${c.miss.toFixed(1)}% under)`);
+  }
+  return list.length ? `<p class="hint">Left out because they would put you under the hit cap for special attacks: ${esc(list.join('; '))}.</p>` : '';
+}
+
+function renderUpgrades(rows, gear, names, cands, setCost = new Map(), underCap = []) {
   const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
   const tags = id => [...(upgradeTable.items[id]?.[3] || '')].map(k => KIND_TAG[k] ? `<span class="tag">${KIND_TAG[k]}</span>` : '').join('');
   const link = id => `<a href="https://www.wowhead.com/forever/item=${Number(id)}" target="_blank" rel="noopener">${esc(names.items[id]?.[0] || `#${id}`)}</a>`;
@@ -370,10 +416,14 @@ function renderUpgrades(rows, gear, names, cands) {
   $('upgOut').innerHTML = (rows.length
     ? '<table><tr><th>Slot</th><th>Upgrade</th><th class="n">DPS</th><th>Where to get it</th></tr>' + rows.map(r => {
         const cur = gear[r.slot]?.id;
-        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[0] || `#${cur}`)}</div>` : ''}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[0] || '')}</td></tr>`;
+        const cost = setCost.get(r.slot);
+        const sets = (r.sets?.lost || []).map(x => `<div class="warn small">Breaks ${esc(x)}${cost ? `, worth about ${fmt(Math.max(0, cost.dps))} DPS (±${fmt(1.96 * cost.err)}). The gain already counts that loss.` : '. The gain already counts that loss.'}</div>`).join('') +
+          (r.sets?.gained || []).map(x => `<div class="src">Completes ${esc(x)}</div>`).join('');
+        return `<tr><td>${SLOT_NAMES[r.slot]}</td><td>${link(r.id)}${tags(r.id)}${cur ? `<div class="src">instead of ${esc(names.items[cur]?.[0] || `#${cur}`)}</div>` : ''}${sets}</td><td class="n g">+${fmt(r.gain)}<span class="src"> ±${fmt(1.96 * r.err)}</span>${r.gain < 1.96 * r.err ? '<div class="src">within sim noise</div>' : ''}</td><td class="src">${esc(upgradeTable.items[r.id]?.[0] || '')}</td></tr>`;
       }).join('') + '</table>'
     : '<p>None of the likely upgrades beat your current gear in the sim.</p>') +
-    (none.length ? `<p class="hint">Simmed but not an upgrade in your gear: ${esc(none.join(', '))}.</p>` : '');
+    (none.length ? `<p class="hint">Simmed but not an upgrade in your gear: ${esc(none.join(', '))}.</p>` : '') +
+    underCapLine(underCap, names);
 }
 
 $('upgGo').onclick = findUpgrades;

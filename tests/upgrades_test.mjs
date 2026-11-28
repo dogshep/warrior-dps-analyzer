@@ -1,6 +1,7 @@
 // Unit checks for picking upgrade candidates. Usage: node tests/upgrades_test.mjs
 import assert from 'node:assert/strict';
-import { pickCandidates, swapRequest, bestPerSlot, poolFor } from '../web/js/upgrades.js';
+import { pickCandidates, swapRequest, bestPerSlot, poolFor, budget, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from '../web/js/upgrades.js';
+import { auditEnchants } from '../web/js/analyze.js';
 
 // [id, value vs the reference item, simmed]; items: [source, faction, phase, group]
 const table = {
@@ -62,4 +63,32 @@ assert.deepEqual(poolFor({ type: 13, handType: 2 }, 'fury'), ['mh', 'oh']);
 assert.deepEqual(poolFor({ type: 13, handType: 4 }, 'fury'), []);
 assert.deepEqual(poolFor({ type: 13, handType: 4 }, 'arms'), ['mh']);
 assert.deepEqual(poolFor({ type: 11 }, 'arms'), ['ring']);
+// Hit cap: the sheet's auto attack miss includes the 19% dual-wield penalty, special attacks don't.
+assert.equal(yellowMiss(18, true), 0);
+assert.equal(yellowMiss(20, true), 1);
+assert.equal(yellowMiss(2, false), 2);
+assert.equal(breaksHitCap(0, 1), true);   // capped, then 1% under
+assert.equal(breaksHitCap(0, 0), false);  // still capped (spare hit lost only)
+assert.equal(breaksHitCap(2, 2), false);  // already under, no worse
+assert.equal(breaksHitCap(2, 3), true);   // already under, worse
+// Set bonuses lost and gained.
+assert.deepEqual(setChange(['Devilsaur Armor (2pc)'], []), { lost: ['Devilsaur Armor (2pc)'], gained: [] });
+assert.deepEqual(setChange([], ['Devilsaur Armor (2pc)']), { lost: [], gained: ['Devilsaur Armor (2pc)'] });
+// Without the set: the slot is emptied and its stats come back as bonus stats.
+const ws = withoutSetRequest(req, 6, { 14: 28, 18: 14 }, { 12: 1 });
+assert.deepEqual(ws.raid.parties[0].players[0].equipment.items[6], {});
+assert.equal(ws.raid.parties[0].players[0].bonusStats.stats[14], 28);
+assert.equal(ws.raid.parties[0].players[0].bonusStats.pseudoStats[12], 1);
+// The budget after a check drops the best pick of a slot: the next one moves up.
+const cs = [{ slot: 0, id: 1, est: 10, rank: 0 }, { slot: 0, id: 2, est: 8, rank: 1 }, { slot: 0, id: 3, est: 6, rank: 2 }, { slot: 6, id: 9, est: 4, rank: 1 }];
+assert.deepEqual(budget(cs.slice(1), 3, 2).map(c => [c.id, c.rank]), [[2, 0], [9, 0], [3, 1]]);
+
+// Enchants: only ones in Forever are suggested (no Living Stats, no Grand Crusader, no shoulder enchant that
+// wowsims marks unavailable).
+const names = { items: { 1: ['Chest', 5], 2: ['Sword', 13, 3, 60, 2], 3: ['Shoulders', 3] }, enchants: {}, enchantPhase: { 2717: 2, 2606: 2 } };
+const eg = []; eg[4] = { id: 1, enchant: 0 }; eg[15] = { id: 2, enchant: 0 }; eg[2] = { id: 3, enchant: 0 };
+const audit = auditEnchants(eg, names);
+assert.deepEqual(audit.find(e => e.slot === 4).best, ['Greater Stats (+4 all stats)']);
+assert.deepEqual(audit.find(e => e.slot === 14).best, ['Crusader']);
+assert.ok(!audit.some(e => e.slot === 2));
 console.log('upgrades_test: ok');
