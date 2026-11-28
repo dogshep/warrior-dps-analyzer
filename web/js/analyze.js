@@ -1,5 +1,11 @@
 // Turns one warrior's events in one fight into metrics, a wowsims request, and ranked suggestions.
 
+import { cooldownReport, cooldownTips } from './cooldowns.js';
+import { rageReport, rageTips, executeReport, executeTips } from './rage.js';
+import { sum, median, fmt } from './format.js';
+import { DEFAULT_ITERATIONS } from './sim-config.js';
+import { PULL_GAP_MS } from './logparser.js';
+
 // Log inventory slots 1..19 (0-based here) in the order wowsims' EquipmentSpec wants them.
 const LOG_TO_SIM_SLOTS = [0, 1, 2, 14, 4, 8, 9, 5, 6, 7, 10, 11, 12, 13, 15, 16, 17];
 const SLOT_NAMES = ['Head', 'Neck', 'Shoulder', 'Back', 'Chest', 'Wrist', 'Hands', 'Waist', 'Legs', 'Feet', 'Ring 1', 'Ring 2', 'Trinket 1', 'Trinket 2', 'Main hand', 'Off hand', 'Ranged'];
@@ -11,7 +17,7 @@ const SLOT_ITEM_TYPE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 1
 // themselves once data/forever-availability.json releases them.
 const ARCANUMS = [[2543, 'Arcanum of Rapidity (+1% haste)'], [1506, 'Lesser Arcanum, +8 Strength'], [1508, 'Lesser Arcanum, +8 Agility']];
 const WEAPON = [[1900, 'Crusader']];
-export const BEST_ENCHANTS = {
+const BEST_ENCHANTS = {
   0: ARCANUMS,
   2: [[2717, 'Might of the Scourge'], [2606, 'Zandalar Signet of Might']],
   3: [[7667, 'Agility (+5)'], [849, 'Lesser Agility (+3)']],
@@ -82,7 +88,7 @@ export const DEFAULT_TALENTS = {
 // wowsims' DefaultConsumables for Fury (ui/specs/warrior/dps/presets.ts). Every one is on Wowhead's Forever database
 // and none is PTR only. Smoked Desert Dumplings are learned from a Cenarion Hold quest in Silithus ("Desert Recipe"),
 // the one source here not yet confirmed live in Forever.
-export const DEFAULT_CONSUMES = {
+const DEFAULT_CONSUMES = {
   resourcePotId: 13442, foodId: 20452, explosiveId: 260814, mhImbueId: 12643, ohImbueId: 12404,
   elixirIds: [13452], extraIds: [10646, 12451, 12460, 5206, 8410],
 };
@@ -117,12 +123,7 @@ const DEBUFF_RULES = [
   [/Annihilator|Armor Shatter/, d => (d.armorShatter = true)],
 ];
 
-import { cooldownReport, cooldownTips } from './cooldowns.js';
-import { rageReport, rageTips, executeReport, executeTips } from './rage.js';
-
 const inFight = (f, t) => t >= f.start && t <= f.end;
-const sum = a => a.reduce((s, x) => s + x, 0);
-const fmt = n => Math.round(n).toLocaleString('en-US');
 
 // Uptime (0..1) of an aura on a player over the fight, from applied/removed pairs.
 function uptime(auras, re, f) {
@@ -141,10 +142,9 @@ function uptime(auras, re, f) {
 // Forever logs a whole dungeon run as one encounter. A fight this long is split into pulls (no damage from the
 // warrior for 15s ends a pull), and DPS, downtime and the sim all use the pulls instead of the walk between them.
 const LONG_FIGHT_MS = 6 * 60 * 1000;
-const PULL_GAP_MS = 15000;
 const MAX_SIM_SECONDS = 300;
 
-export function splitPulls(dmg, fight) {
+function splitPulls(dmg, fight) {
   const pulls = [];
   let cur = null;
   for (const d of dmg) {
@@ -158,7 +158,6 @@ export function splitPulls(dmg, fight) {
   return pulls;
 }
 
-const median = xs => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 
 export function analyzeFight(parser, guid, fight, names) {
   const p = parser.players.get(guid);
@@ -276,7 +275,7 @@ export function buildRequest(a, parser, names, apls, opts = {}) {
   return {
     raid: { parties: [{ players: [player], buffs: b.party }], buffs: b.raid, debuffs },
     encounter: { duration, executeProportion20: 0.2, executeProportion35: 0.35, targets: Array.from({ length: a.targetCount }, () => DEFAULT_TARGET) },
-    simOptions: { iterations: opts.iterations || 300, randomSeed: String(opts.seed || 1337) },
+    simOptions: { iterations: opts.iterations || DEFAULT_ITERATIONS, randomSeed: String(opts.seed || 1337) },
   };
 }
 
@@ -442,4 +441,4 @@ export function missingConsumes(found) {
   return [13452, 12451, 12460, 20452, 13442].filter(id => !have.has(id)).map(id => CONSUME_LABELS[id]);
 }
 
-export { SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS, fmt };
+export { SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS };

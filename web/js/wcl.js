@@ -6,43 +6,24 @@
 // with their own Warcraft Logs account. The token stays in this tab's sessionStorage, not localStorage: every
 // project site under dogshep.github.io shares one origin, and localStorage would hand it to all of them for a week.
 
-export const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
+import { QUERIES, QUERY_VARS, WCL_SITE as SITE, wclApis } from './wcl-queries.js';
 
-import { QUERIES, QUERY_VARS } from './wcl-queries.js';
+const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
 
-const SITE = 'https://forever.warcraftlogs.com';
 const AUTHORIZE = `${SITE}/oauth/authorize`;
 const TOKEN = `${SITE}/oauth/token`;
-// Forever's API docs give the Classic API address with Forever's own sign-in; the token decides the game.
-// The Forever address is tried second.
-const APIS = ['https://classic.warcraftlogs.com/api/v2/user', `${SITE}/api/v2/user`];
+const APIS = wclApis('user');
 
 const storage = kind => ({
   get: k => { try { return globalThis[kind].getItem(k); } catch { return null; } },
   set: (k, v) => { try { globalThis[kind].setItem(k, v); } catch {} },
   del: k => { try { globalThis[kind].removeItem(k); } catch {} },
 });
-// Settings that are not secret (a custom client id) persist; sign-in state lasts only for this tab.
+// Only used to clear what older versions left behind; sign-in state lasts only for this tab.
 const store = storage('localStorage');
 const session = storage('sessionStorage');
 // Earlier versions kept the token and sign-in state in localStorage. Clear those out.
-for (const k of ['wcl_token', 'wcl_token_expires', 'wcl_verifier', 'wcl_state', 'wcl_pending']) store.del(k);
-
-// v2 API client ids are UUIDs. Anything else (a v1 key, say) is ignored so it can't shadow the site's client.
-const isClientId = id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
-
-export function clientId() {
-  const own = store.get('wcl_client_id');
-  return isClientId(own) ? own : WCL_CLIENT_ID;
-}
-// Returns false (and stores nothing) when `id` is not a v2 client id.
-export function setClientId(id) {
-  id = (id || '').trim();
-  if (!id) { store.del('wcl_client_id'); return true; }
-  if (!isClientId(id)) { store.del('wcl_client_id'); return false; }
-  store.set('wcl_client_id', id);
-  return true;
-}
+for (const k of ['wcl_token', 'wcl_token_expires', 'wcl_verifier', 'wcl_state', 'wcl_pending', 'wcl_client_id']) store.del(k);
 
 // "https://forever.warcraftlogs.com/reports/83cYV91DARnwWNaj?fight=1&source=5" -> {code, fight, source}
 export function parseReportUrl(text) {
@@ -77,7 +58,7 @@ export function signOut() {
 
 // Sends the viewer to Warcraft Logs to sign in. `pending` (the pasted link) comes back after the redirect.
 export async function signIn(pending) {
-  const id = clientId();
+  const id = WCL_CLIENT_ID;
   if (!id) throw new Error('This page has no Warcraft Logs client id yet.');
   const verifier = crypto.randomUUID() + crypto.randomUUID();
   const state = crypto.randomUUID();
@@ -104,7 +85,7 @@ export async function finishSignIn() {
   if (!state || !verifier || q.get('state') !== state) throw new Error('Warcraft Logs sign-in did not match this page. Try again.');
   if (error) throw new Error(error === 'access_denied' ? 'Warcraft Logs sign-in was cancelled.' : 'Warcraft Logs sign-in failed. Try again.');
   const body = new URLSearchParams({
-    grant_type: 'authorization_code', client_id: clientId(), code, redirect_uri: redirectUri(), code_verifier: verifier,
+    grant_type: 'authorization_code', client_id: WCL_CLIENT_ID, code, redirect_uri: redirectUri(), code_verifier: verifier,
   });
   const res = await fetch(TOKEN, { method: 'POST', body });
   const data = await res.json().catch(() => ({}));

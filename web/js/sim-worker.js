@@ -27,7 +27,7 @@ const CHUNKS = 4;
 // Runs the iterations in chunks so progress can be reported, then merges them: DPS is the mean of equal-sized
 // chunks, and action metrics are concatenated (they are sums over iterations, which the page adds up by name).
 async function run(request, report) {
-  const total = Math.min(5000, Math.max(1, Math.round(Number(request.simOptions.iterations)) || 300));
+  const total = Math.min(5000, Math.max(1, Math.round(Number(request.simOptions.iterations)) || 300)); // limits as in sim-config.js
   const chunks = total >= CHUNKS * 10 ? CHUNKS : 1;
   const per = Math.ceil(total / chunks);
   const dps = [], actions = [];

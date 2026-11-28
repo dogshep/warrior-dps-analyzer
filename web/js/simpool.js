@@ -2,6 +2,8 @@
 // worker, so an extra worker only pays the engine start (about 1 to 2 s), not another 6 MB download and compile.
 // Workers are started early (warm) so the engine is usually running before anyone presses Analyze.
 
+import { DEFAULT_ITERATIONS } from './sim-config.js';
+
 // Workers to run side by side: one per spare CPU core, up to 4 (each one holds about 110 MB).
 export const THREADS = typeof navigator === 'undefined' ? 1 : Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
 
@@ -97,7 +99,7 @@ export async function stats(request, i = 0) {
 // One sim split across several workers: each runs its share of the iterations with its own seed, and the
 // parts are merged into one result. onProgress gets the average progress of the parts (0..1).
 export async function simSplit(request, onProgress, idx = [0]) {
-  const total = Math.max(1, Math.round(Number(request.simOptions.iterations)) || 300);
+  const total = Math.max(1, Math.round(Number(request.simOptions.iterations)) || DEFAULT_ITERATIONS);
   const parts = Math.max(1, Math.min(idx.length, total));
   const per = Math.ceil(total / parts);
   const seed = Number(request.simOptions.randomSeed || 1);

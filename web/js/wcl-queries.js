@@ -2,7 +2,12 @@
 // Each events list is its own query, so each one pages on its own nextPageTimestamp and a long fight
 // doesn't re-download every list for every page of another.
 
-export const REPORT_QUERY = `query($code: String!) { reportData { report(code: $code) {
+// Warcraft Logs addresses, used by the page and the Worker. The Classic API address answers for Forever reports
+// with Forever's own sign-in; the token decides the game. Forever's own API address is tried second.
+export const WCL_SITE = 'https://forever.warcraftlogs.com';
+export const wclApis = kind => [`https://classic.warcraftlogs.com/api/v2/${kind}`, `${WCL_SITE}/api/v2/${kind}`]; // kind: 'user' (sign-in) or 'client' (Worker)
+
+const REPORT_QUERY = `query($code: String!) { reportData { report(code: $code) {
   title startTime
   fights { id encounterID name startTime endTime kill friendlyPlayers }
   masterData { actors(type: "Player") { id name subType server } abilities { gameID name } }
