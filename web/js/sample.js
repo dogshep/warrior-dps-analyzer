@@ -3,6 +3,7 @@
 // on sample/sample-WoWCombatLog.txt (a log written by scripts/make-sample-log.mjs, with no real players in it).
 
 import { $ } from './format.js';
+import { tidyTips } from './tips-ui.js';
 
 // The parts of the results page the snapshot fills in, by element id. Anything else in the file is ignored.
 export const SAMPLE_PARTS = ['stats', 'tips', 'simnote', 'cds', 'cdnote', 'execSum', 'execTable', 'upgOut', 'upgNote', 'abil', 'gear'];
@@ -19,6 +20,7 @@ export async function showSample() {
   }
   for (const id of SAMPLE_PARTS) if ($(id) && typeof snapshot.html?.[id] === 'string') $(id).innerHTML = snapshot.html[id];
   $('exec').hidden = !snapshot.html?.execSum;
+  tidyTips($('tips'));
   $('out').classList.add('sample');
   $('sampleBanner').hidden = false;
   $('out').hidden = false;

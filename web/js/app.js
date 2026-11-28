@@ -5,6 +5,7 @@ import { $, esc } from './format.js';
 import * as pool from './simpool.js';
 import { HS_EXECUTE_RAGE } from './rage.js';
 import { DEFAULT_ITERATIONS, MIN_ITERATIONS, MAX_ITERATIONS } from './sim-config.js';
+import { tidyTips } from './tips-ui.js';
 import { cooldownsHtml, executeView, statsHtml, tipsHtml, tablesHtml } from './render.js';
 import { initUpgrades } from './upgrades-ui.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames } from './analyze.js';
@@ -170,7 +171,7 @@ function renderExecute(a) {
 }
 
 const renderStats = (a, s, ideal) => ($('stats').innerHTML = statsHtml(a, s, ideal));
-const renderTips = (list, gap) => ($('tips').innerHTML = tipsHtml(list, gap));
+const renderTips = (list, gap) => { $('tips').innerHTML = tipsHtml(list, gap); tidyTips($('tips')); };
 
 function renderTables(a, names) {
   const t = tablesHtml(a, names);
