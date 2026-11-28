@@ -5,7 +5,8 @@ import * as pool from './simpool.js';
 import { pickCandidates, refineSet, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
 import { loadPrices, houseKey, age } from './prices.js';
 import { upgradesHtml, underCapHtml } from './render.js';
-import { buildRequest, SLOT_ITEM_TYPE } from './analyze.js';
+import { buildRequest } from './analyze.js';
+import { SLOT_ITEM_TYPE, SLOT_OH } from './slots.js';
 import { CancelledError } from './errors.js';
 import { ITEM, ITEM_TYPE_WEAPON } from './fields.js';
 
@@ -149,7 +150,7 @@ async function findUpgrades() {
     const likely = pickCandidates(gear, upgradeTable, a.preset, a.combatant?.faction, { perSlot: 4, max: 200, kinds: upgradeKinds() });
     if (!likely.length) { $('upgOut').innerHTML = `<p>${upgradeKinds() ? 'Nothing in the upgrade list beats what you wear from these sources. Try ticking more of them.' : 'Tick at least one source.'}</p>`; return; }
     bar('Checking hit and set bonuses…', 0);
-    const ohInfo = names.items[gear[15]?.id];
+    const ohInfo = names.items[gear[SLOT_OH]?.id];
     const dualWield = !!ohInfo && ohInfo[ITEM.TYPE] === ITEM_TYPE_WEAPON;
     const { checked, underCap } = await checkHitAndSets(probe, likely, dualWield);
     const cands = budget(checked, Number($('upgMax').value), 2);

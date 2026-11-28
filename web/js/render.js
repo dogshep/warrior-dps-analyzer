@@ -2,13 +2,14 @@
 // app.js and upgrades-ui.js put the strings on the page.
 import { esc, fmt, mmss } from './format.js';
 import { houseKey, priceFor, materialsList, gold, age } from './prices.js';
-import { auditEnchants, shortEnchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS } from './analyze.js';
-import { ITEM, SRC, isCrafted } from './fields.js';
+import { auditEnchants, shortEnchantName } from './analyze.js';
+import { SLOT_NAMES, LOG_TO_SIM_SLOTS } from './slots.js';
+import { ITEM, SRC, isCrafted, SOURCE_KINDS } from './fields.js';
 
 // 95% confidence margin of a sim result, in standard errors.
 const Z95 = 1.96;
 const MARKET_NAMES = { normal: 'Normal', pvp: 'PvP', rp: 'RP', rppvp: 'RP PvP' };
-const KIND_TAG = { d: 'Dungeon', r: 'Raid', c: 'Crafted', q: 'Quest', v: 'Vendor', f: 'Reputation', p: 'PvP' };
+const KIND_TAG = Object.fromEntries(SOURCE_KINDS.map(k => [k.key, k.tag]));
 
 // One row per cooldown: when it was up (orange), when it sat ready but unused (red stripes), and the pulls or
 // execute phase behind it.

@@ -6,26 +6,19 @@
 // and sims each one swapped into the player's own gear, so the DPS numbers it shows are for their setup
 // (their other items, set bonuses, enchants, buffs and fight).
 
-import { SRC } from './fields.js';
-
-// Item pools, keyed by name, with the sim slot each is simmed in. Rings and trinkets share one pool for both slots.
-export const SLOT_POOLS = { head: 0, neck: 1, shoulder: 2, back: 3, chest: 4, wrist: 5, hands: 6, waist: 7, legs: 8, feet: 9, ring: 10, trinket: 12, mh: 14, oh: 15, ranged: 16 };
-// The pool for each sim slot (0 head ... 16 ranged).
-const SLOT_KEY = ['head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet', 'ring', 'ring', 'trinket', 'trinket', 'mh', 'oh', 'ranged'];
-const ARMOR_KEY = [null, 'head', 'neck', 'shoulder', 'back', 'chest', 'wrist', 'hands', 'waist', 'legs', 'feet', 'ring', 'trinket'];
-// The slot worn beside each paired slot: a unique item can't be in both.
-export const PAIR = { 10: 11, 11: 10, 12: 13, 13: 12, 14: 15, 15: 14 };
+import { SRC, ITEM_TYPE_WEAPON, ITEM_TYPE_RANGED, HAND } from './fields.js';
+import { SLOT_KEY, PAIR, poolOfItemType, isRingOrTrinket, isWeaponSlot } from './slots.js';
 
 // Which pools an item from wowsims' db.json belongs to for a rotation (build time only). Fury dual wields;
 // the two-hander and Arms rotations take a two-hand weapon and nothing in the off hand.
 export function poolFor(it, preset) {
   const t = it.type || 0;
-  if (t >= 1 && t <= 12) return [ARMOR_KEY[t]];
-  if (t === 14) return ['ranged'];
-  if (t !== 13) return [];
+  if (t >= 1 && t <= 12) return [poolOfItemType(t)];
+  if (t === ITEM_TYPE_RANGED) return ['ranged'];
+  if (t !== ITEM_TYPE_WEAPON) return [];
   const h = it.handType || 0;
-  if (preset === 'fury') return [...(h === 1 || h === 2 ? ['mh'] : []), ...(h === 2 || h === 3 ? ['oh'] : [])];
-  return h === 4 ? ['mh'] : [];
+  if (preset === 'fury') return [...(h === HAND.MAIN || h === HAND.ONE ? ['mh'] : []), ...(h === HAND.ONE || h === HAND.OFF ? ['oh'] : [])];
+  return h === HAND.TWO ? ['mh'] : [];
 }
 
 // Log faction (1 Alliance, 0 Horde) to the table's (1 Alliance, 2 Horde); unknown matches both.
@@ -58,7 +51,7 @@ export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max 
     const curVal = valueOf(slot);
     let limit = perSlot;
     // Rings and trinkets: a new one replaces the weaker of the two, so only that slot gets candidates (twice as many).
-    if (slot >= 10 && slot <= 13) {
+    if (isRingOrTrinket(slot)) {
       const ov = valueOf(PAIR[slot]);
       if (ov < curVal || (ov === curVal && PAIR[slot] < slot)) continue;
       limit = perSlot * 2;
@@ -66,7 +59,7 @@ export function pickCandidates(gear, table, preset, faction, { perSlot = 2, max 
     const picks = [];
     for (const [id, val, simmed] of pool) {
       // Weapons are only picked when the build simmed them; weights alone misjudge speed and procs.
-      if (id === cur || id === other || (slot >= 14 && !simmed)) continue;
+      if (id === cur || id === other || (isWeaponSlot(slot) && !simmed)) continue;
       const meta = table.items[id];
       if (!meta || !openNow(meta, now) || (side && meta[SRC.FACTION] && meta[SRC.FACTION] !== side) || ![...meta[SRC.KINDS]].some(k => kinds.includes(k))) continue;
       const est = val - curVal;
@@ -90,7 +83,7 @@ export function budget(cands, max, perSlot = Infinity) {
   for (const c of cands) bySlot.set(c.slot, [...(bySlot.get(c.slot) || []), c]);
   const kept = [];
   for (const [slot, l] of bySlot) {
-    const limit = slot >= 10 && slot <= 13 ? perSlot * 2 : perSlot;
+    const limit = isRingOrTrinket(slot) ? perSlot * 2 : perSlot;
     l.sort((a, b) => a.rank - b.rank).slice(0, limit).forEach((c, i) => kept.push({ ...c, rank: i }));
   }
   return kept.sort((a, b) => a.rank - b.rank || key(b) - key(a)).slice(0, max);

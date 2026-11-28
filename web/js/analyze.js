@@ -6,12 +6,8 @@ import { sum, median, fmt } from './format.js';
 import { DEFAULT_ITERATIONS } from './sim-config.js';
 import { PULL_GAP_MS } from './logparser.js';
 import { ITEM, ITEM_TYPE_WEAPON, HAND_TWO } from './fields.js';
+import { SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS, SLOT_MH, SLOT_OH } from './slots.js';
 
-// Log inventory slots 1..19 (0-based here) in the order wowsims' EquipmentSpec wants them.
-export const LOG_TO_SIM_SLOTS = [0, 1, 2, 14, 4, 8, 9, 5, 6, 7, 10, 11, 12, 13, 15, 16, 17];
-export const SLOT_NAMES = ['Head', 'Neck', 'Shoulder', 'Back', 'Chest', 'Wrist', 'Hands', 'Waist', 'Legs', 'Feet', 'Ring 1', 'Ring 2', 'Trinket 1', 'Trinket 2', 'Main hand', 'Off hand', 'Ranged'];
-// Item type of each sim slot (1 head ... 13 weapon, 14 ranged), for slot-specific enchant names.
-export const SLOT_ITEM_TYPE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 13, 14];
 const ARCANUMS = [[2543, 'Arcanum of Rapidity (+1% haste)'], [1506, 'Lesser Arcanum, +8 Strength'], [1508, 'Lesser Arcanum, +8 Agility']];
 const WEAPON = [[1900, 'Crusader']];
 // The DPS warrior enchants per sim slot, best first, from the wowsims Forever enchant list. Any enchant not
@@ -27,11 +23,10 @@ const BEST_ENCHANTS = {
   6: [[2564, 'Superior Agility (+15)'], [2563, 'Superior Strength (+15)']],
   8: ARCANUMS,
   9: [[1887, 'Greater Agility (+7)']],
-  14: WEAPON,
-  15: WEAPON,
+  [SLOT_MH]: WEAPON,
+  [SLOT_OH]: WEAPON,
 };
 const TWO_HAND_EXTRA = [[2646, 'Agility (+25)'], [8215, 'Strength (+25)']];
-const SLOT_LABEL = { 0: 'Head', 2: 'Shoulder', 3: 'Back', 4: 'Chest', 5: 'Wrist', 6: 'Hands', 8: 'Legs', 9: 'Feet', 14: 'Main hand', 15: 'Off hand' };
 
 // names.json tables are looked up by ids that come from the log. Without a prototype, an id like "constructor"
 // finds nothing instead of a built-in function.
@@ -75,11 +70,11 @@ export function auditEnchants(gear, names) {
     const it = gear[LOG_TO_SIM_SLOTS[slot]];
     if (!it || !it.id) continue;
     const info = names.items[it.id];
-    if (slot === 15 && info && info[ITEM.TYPE] !== ITEM_TYPE_WEAPON) continue;
+    if (slot === SLOT_OH && info && info[ITEM.TYPE] !== ITEM_TYPE_WEAPON) continue;
     let list = best;
-    if (slot === 14 && info && info[ITEM.HAND] === HAND_TWO) list = [...best, ...TWO_HAND_EXTRA.filter(([id]) => inForever(names, id, slot))];
+    if (slot === SLOT_MH && info && info[ITEM.HAND] === HAND_TWO) list = [...best, ...TWO_HAND_EXTRA.filter(([id]) => inForever(names, id, slot))];
     const ok = list.some(([id]) => id === it.enchant) || all.some(([id]) => id === it.enchant);
-    out.push({ slot, label: SLOT_LABEL[slot], have: it.enchant, haveName: it.enchant ? shortEnchantName(names, it.enchant, slot) : '', ok, best: list.map(([, n]) => n) });
+    out.push({ slot, label: SLOT_NAMES[slot], have: it.enchant, haveName: it.enchant ? shortEnchantName(names, it.enchant, slot) : '', ok, best: list.map(([, n]) => n) });
   }
   return out;
 }
@@ -234,7 +229,7 @@ export function analyzeFight(parser, guid, fight, names) {
 
   const combatant = parser.combatants.get(guid);
   const spec = casts.some(c => c.name === 'Mortal Strike') ? 'arms' : 'fury';
-  const mh = combatant?.items?.[15];
+  const mh = combatant?.items?.[LOG_TO_SIM_SLOTS[SLOT_MH]];
   const twoHand = mh && names.items[mh.id]?.[ITEM.HAND] === HAND_TWO;
   const preset = spec === 'arms' ? 'arms' : twoHand ? 'fury_2h' : 'fury';
 
@@ -315,7 +310,7 @@ export function detectConsumes(a, parser, names) {
     else spec.extraIds.push(itemId);
   }
   const gear = a.combatant?.items || [];
-  for (const [slot, key] of [[15, 'mhImbueId'], [16, 'ohImbueId']]) {
+  for (const [slot, key] of [[LOG_TO_SIM_SLOTS[SLOT_MH], 'mhImbueId'], [LOG_TO_SIM_SLOTS[SLOT_OH], 'ohImbueId']]) {
     const te = gear[slot]?.tempEnchant;
     const im = te && names.imbues[te];
     if (im) { spec[key] = im[0]; if (!found.some(f => f.itemId === im[0])) found.push({ itemId: im[0], name: im[2] }); }

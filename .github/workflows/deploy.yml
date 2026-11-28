@@ -84,7 +84,7 @@ jobs:
       # the wowsims commit or the code that ranks items.
       - name: Key for the upgrade list
         id: upkey
-        run: echo "key=upgrades-$(git -C .wowsims rev-parse HEAD)-${{ hashFiles('scripts/**', 'data/**', 'web/js/upgrades.js', 'web/js/analyze.js', 'web/js/fields.js', 'web/js/cooldowns.js', 'web/js/rage.js', 'web/js/format.js', 'web/js/sim-config.js', 'web/js/logparser.js') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=upgrades-$(git -C .wowsims rev-parse HEAD)-${{ hashFiles('scripts/**', 'data/**', 'web/js/upgrades.js', 'web/js/analyze.js', 'web/js/fields.js', 'web/js/slots.js', 'web/js/cooldowns.js', 'web/js/rage.js', 'web/js/format.js', 'web/js/sim-config.js', 'web/js/logparser.js') }}" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: upcache
         with:
