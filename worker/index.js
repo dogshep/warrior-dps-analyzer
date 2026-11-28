@@ -122,6 +122,8 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: origin ? 204 : 403, headers: cors });
     if (!origin) return json({ error: 'origin not allowed' }, 403, cors);
     if (request.method !== 'POST') return json({ error: 'POST only' }, 405, cors);
+    // Look at the declared size first so a huge body is never read; the length check below covers the rest.
+    if (Number(request.headers.get('Content-Length')) > 2000) return json({ error: 'too large' }, 413, cors);
     const text = await request.text();
     if (text.length > 2000) return json({ error: 'too large' }, 413, cors);
     let body;
@@ -137,11 +139,11 @@ export default {
     if (hit) return new Response(hit.body, { status: hit.status, headers: { 'Content-Type': 'application/json', ...cors, 'X-Cache': 'hit' } });
 
     // Only requests that would reach Warcraft Logs count against the limit.
-    if (env.LIMITER) {
-      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-      const { success } = await env.LIMITER.limit({ key: ip });
-      if (!success) return json({ error: 'rate limited' }, 429, cors, { 'Retry-After': '60' });
-    }
+    // No limiter means the deploy lost its binding (wrangler.toml): refuse rather than spend the quota unprotected.
+    if (!env.LIMITER) return json({ error: 'rate limiter not configured' }, 503, cors);
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const { success } = await env.LIMITER.limit({ key: ip });
+    if (!success) return json({ error: 'rate limited' }, 429, cors, { 'Retry-After': '60' });
 
     const remember = (out, status, seconds) =>
       ctx.waitUntil(cache.put(key, new Response(out, { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${seconds}` } })));

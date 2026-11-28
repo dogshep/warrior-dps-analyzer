@@ -24,8 +24,10 @@ export function priceFor(prices, key, id) {
   if (!h) return undefined;
   const p = h.items?.[id];
   if (!p) return null;
-  const out = { min: p[PRICE.MIN], median: p[PRICE.MEDIAN], listed: p[PRICE.LISTED], updated: h.updated };
-  if (p.length > PRICE.UNPRICED) Object.assign(out, { materials: p[PRICE.MATERIALS], unpriced: p[PRICE.UNPRICED] });
+  // Numbers only: this file is fetched from a branch, and its values end up in HTML.
+  const n = v => Number(v) || 0;
+  const out = { min: n(p[PRICE.MIN]), median: n(p[PRICE.MEDIAN]), listed: n(p[PRICE.LISTED]), updated: h.updated };
+  if (p.length > PRICE.UNPRICED) Object.assign(out, { materials: n(p[PRICE.MATERIALS]), unpriced: n(p[PRICE.UNPRICED]) });
   return out;
 }
 

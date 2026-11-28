@@ -193,8 +193,12 @@ jobs:
         run: |
           if printf '%s' "$URL" | grep -Eq '^https://[A-Za-z0-9.-]+\.workers\.dev$'; then
             printf '{"url":"%s"}\n' "$URL" > web/wcl-proxy.json
+            # Let the page talk to this Worker only, not every *.workers.dev site.
+            sed -i "s#https://\*\.workers\.dev#$URL#" web/index.html
+            grep -q "connect-src[^;]*$URL" web/index.html || { echo "::error::Could not narrow the CSP to the Worker"; exit 1; }
           else
             echo "No Worker this run; the page keeps Warcraft Logs sign-in only."
+            sed -i 's# https://\*\.workers\.dev##' web/index.html
           fi
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

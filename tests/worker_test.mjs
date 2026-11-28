@@ -17,7 +17,7 @@ const store = new Map();
 globalThis.caches = { default: { match: async k => store.get(k.url)?.clone(), put: async (k, r) => { store.set(k.url, new Response(await r.arrayBuffer(), r)); }, delete: async k => store.delete(k.url) } };
 
 const { default: worker } = await import('../worker/index.js');
-const env = { WCL_CLIENT_ID: 'id', WCL_CLIENT_SECRET: 'secret', ALLOWED_ORIGINS: 'https://dogshep.github.io' };
+const env = { WCL_CLIENT_ID: 'id', WCL_CLIENT_SECRET: 'secret', ALLOWED_ORIGINS: 'https://dogshep.github.io', LIMITER: { limit: async () => ({ success: true }) } };
 const waits = [];
 const ctx = { waitUntil: p => waits.push(p) };
 const settle = () => Promise.all(waits.splice(0));
@@ -89,6 +89,15 @@ r = await worker.fetch(req({ op: 'report', variables: { code: 'CCCCCCCCCCCCCCCC'
 assert.equal(r.status, 200);
 assert.equal((await r.json()).data.reportData.report.title, 'Retry');
 globalThis.fetch = realFetch;
+
+// Without a rate limiter binding, cache misses are refused (cache hits still work).
+r = await worker.fetch(req({ op: 'report', variables: { code: 'EEEEEEEEEEEEEEEE' } }), { ...env, LIMITER: undefined }, ctx);
+assert.equal(r.status, 503);
+r = await worker.fetch(req({ op: 'report', variables: { code: '83cYV91DARnwWNaj' } }), { ...env, LIMITER: undefined }, ctx);
+assert.equal(r.headers.get('X-Cache'), 'hit');
+// A declared size over the limit is refused before the body is read.
+r = await worker.fetch(new Request('https://w.dev/', { method: 'POST', headers: { Origin: 'https://dogshep.github.io', 'Content-Length': '999999' }, body: '{}' }), env, ctx);
+assert.equal(r.status, 413);
 
 // The per-IP limit applies to cache misses only.
 let allowed = 0;
