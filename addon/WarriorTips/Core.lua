@@ -95,6 +95,9 @@ function WT.CooldownLeft(name)
   return math.max(0, start + dur - GetTime())
 end
 
+-- Cooldowns the tips and report card track, in the order the report lists them.
+WT.BIG_COOLDOWNS = { "Death Wish", "Recklessness", "Blood Fury", "Bloodrage" }
+
 -- Cooldowns are secret in combat on Forever, but our own cast events are not.
 -- So we remember when each tracked spell is ready: from a clean cooldown read
 -- (out of combat) or from our own cast plus the spell's cooldown length.
@@ -242,7 +245,7 @@ local function pickColor(key, done)
   local c = WT.db[key]
   local function apply()
     local r, g, b = ColorPickerFrame:GetColorRGB()
-    WT.db[key] = { r, g, b }; WT.ApplyStyle(); WT.ShowSample(key)
+    WT.db[key] = { r, g, b }; WT.ApplyStyle(); WT.ShowSample()
     if done then done() end
   end
   local info = { r = c[1], g = c[2], b = c[3], hasOpacity = false, swatchFunc = apply,
@@ -253,7 +256,6 @@ local function pickColor(key, done)
   end
 end
 WT.PickColor = pickColor
-WT.COLORS = COLORS
 
 local bg = frame:CreateTexture(nil, "BACKGROUND")
 bg:SetAllPoints()
@@ -293,10 +295,8 @@ function WT.Tip(key, msg, again, id)
   if WT.fight then table.insert(WT.fight.tips, key) end
 end
 
-function WT.ResetThrottle() wipe(lastByKey) end
-
 -- Preview after a style change: a sample tip, plus the rage line for a few seconds.
-function WT.ShowSample(key)
+function WT.ShowSample()
   WT.Show("Execute phase: Execute is your main button now")
   if WT.PreviewRage then WT.PreviewRage(4) end
 end
@@ -416,18 +416,18 @@ SlashCmdList.WARRIORTIPS = function(input)
     db.rageCap = math.max(30, math.min(100, tonumber(a))); WT.Print("rage cap " .. db.rageCap)
   elseif cmd == "size" and tonumber(a) then
     db.fontSize = math.max(10, math.min(40, math.floor(tonumber(a)))); WT.ApplyStyle()
-    WT.Print("text size " .. db.fontSize); WT.ShowSample("color")
+    WT.Print("text size " .. db.fontSize); WT.ShowSample()
   elseif cmd == "color" or cmd == "ragecolor" then
     local key = cmd == "color" and "color" or "rageColor"
     local c = parseColor(a)
-    if c then db[key] = c; WT.ApplyStyle(); WT.ShowSample(key)
+    if c then db[key] = c; WT.ApplyStyle(); WT.ShowSample()
     elseif a or not pickColor(key) then WT.Print("unknown color. Use a name (gold, white, red, orange, yellow, green, cyan, blue, purple, pink) or a hex code like ff8800") end
   elseif cmd == "sound" and (a == "on" or a == "off") then
     db.sound = a == "on"; WT.Print("sound " .. a)
   elseif cmd == "unlock" then setUnlocked(true)
   elseif cmd == "lock" then setUnlocked(false)
   elseif cmd == "test" then
-    WT.ShowSample("color")
+    WT.ShowSample()
   elseif cmd == "probe" then WT.ArmProbe()
   elseif cmd == "debug" then
     if a == "on" or a == "off" then WT.debug = a == "on" else WT.debug = not WT.debug end

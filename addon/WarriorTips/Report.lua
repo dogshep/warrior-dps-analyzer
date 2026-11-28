@@ -158,7 +158,7 @@ function debugReport(f, meter)
         math.floor(active / len) + 1, active, tostring(len)))
     end
   end
-  for _, name in ipairs({ "Death Wish", "Recklessness", "Blood Fury", "Bloodrage" }) do
+  for _, name in ipairs(WT.BIG_COOLDOWNS) do
     if WT.Knows(name) then
       local atPull = f.pullReady[name]
       local now = WT.CooldownLeftTracked(name)
