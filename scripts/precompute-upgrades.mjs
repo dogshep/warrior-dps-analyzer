@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { DEFAULT_TALENTS, consumesFor, DEFAULT_TARGET } from '../web/js/analyze.js';
 import { SLOT_POOLS, poolFor } from '../web/js/upgrades.js';
@@ -261,6 +262,7 @@ async function main() {
   process.exit(0);
 }
 
+export { sourceText, factionOf, kindsOf, usable, special };
 const round = x => Math.round(x * 10) / 10;
 
 // Worker thread: sims the requests it is sent.
@@ -270,6 +272,7 @@ if (!isMainThread) {
     try { parentPort.postMessage({ id, dps: run(req) }); } catch (e) { parentPort.postMessage({ id, error: String(e.message || e) }); }
   });
   parentPort.postMessage({ ready: true });
-} else {
+} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Only when run as a script, so tests can import the helpers below.
   await main();
 }
