@@ -94,7 +94,7 @@ jobs:
         if: steps.upcache.outputs.cache-hit != 'true'
         run: node scripts/precompute-upgrades.mjs .wowsims/assets/database/db.json web/sim
       - name: Unit tests and sim smoke test (parse the sample log and sim it)
-        run: npm test && node tests/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
+        run: npm test && node scripts/dev/run_analysis.mjs tests/fixture-WoWCombatLog.txt 50
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sim

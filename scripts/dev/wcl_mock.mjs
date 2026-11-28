@@ -1,7 +1,7 @@
 // Builds Warcraft Logs API responses from the sample log, so the link import can be tested offline.
-// Usage: node tests/wcl_mock.mjs tests/fixture-WoWCombatLog.txt > out.json
+// Usage: node scripts/dev/wcl_mock.mjs tests/fixture-WoWCombatLog.txt > out.json
 import { readFileSync } from 'node:fs';
-import { parseText } from '../web/js/logparser.js';
+import { parseText } from '../../web/js/logparser.js';
 
 const parser = parseText(readFileSync(process.argv[2], 'utf8'));
 const [w] = parser.warriors();

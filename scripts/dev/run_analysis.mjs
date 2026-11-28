@@ -1,13 +1,13 @@
 // End to end in Node: parse a log, pick the top warrior and fight, run the wowsims WASM sim, print suggestions.
-// Usage: node tests/run_analysis.mjs <log> [iterations]
+// Usage: node scripts/dev/run_analysis.mjs <log> [iterations]
 import { readFileSync } from 'node:fs';
-import { loadSim } from '../scripts/lib/node-sim.mjs';
-import { parseText } from '../web/js/logparser.js';
-import { aplSpellNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes } from '../web/js/analyze.js';
+import { loadSim } from '../lib/node-sim.mjs';
+import { parseText } from '../../web/js/logparser.js';
+import { aplSpellNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes } from '../../web/js/analyze.js';
 
 const [logPath, itArg] = process.argv.slice(2);
 const iterations = Number(itArg || 200);
-const root = new URL('../web/sim/', import.meta.url);
+const root = new URL('../../web/sim/', import.meta.url);
 const names = JSON.parse(readFileSync(new URL('names.json', root)));
 const apls = Object.fromEntries(['fury', 'fury_2h', 'arms'].map(k => [k, JSON.parse(readFileSync(new URL(`apls/${k}.apl.json`, root)))]));
 

@@ -95,12 +95,12 @@ Needs Go (the version in wowsims' `go.mod`), Python 3 with `pip install grpcio-t
 ```sh
 scripts/build-sim.sh            # clones wowsims/forever into .wowsims and builds web/sim/ (SKIP_UPGRADES=1 skips the slow gear ranking)
 python3 -m http.server -d web   # then open http://localhost:8000
-node tests/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis in the terminal
+node scripts/dev/run_analysis.mjs path/to/WoWCombatLog.txt 300   # the same analysis in the terminal
 npm test                        # unit tests: every tests/*_test.mjs (CI runs this on every pull request)
 npm run test:addon              # addon tests; needs lua5.1
 ```
 
-`tests/make_fixture.mjs` writes the synthetic sample log in `tests/`. It plays a deliberately sloppy fury rotation and exists to smoke test the pipeline.
+`scripts/dev/make_fixture.mjs` writes the synthetic sample log in `tests/`. It plays a deliberately sloppy fury rotation and exists to smoke test the pipeline.
 
 ### Sample report
 
@@ -132,12 +132,13 @@ Rerun `make-sample.mjs` after changing the log, how results are shown, or the si
 | `web/js/wcl.js`, `web/js/wcl-queries.js` | Warcraft Logs import: through the Worker, or with the viewer's own sign-in |
 | `worker/` | Cloudflare Worker that loads public Warcraft Logs reports with no sign-in ([worker/README.md](worker/README.md)) |
 | `scripts/build-sim.sh`, `scripts/make_names.py`, `scripts/make_version.py` | Build the sim and the item/spell name tables and version file into `web/sim/` |
-| `scripts/lib/node-sim.mjs` | Loads the built sim in Node (precompute script and the `tests/run_*.mjs` tools) |
+| `scripts/lib/node-sim.mjs` | Loads the built sim in Node (precompute script and the `scripts/dev/` tools) |
 | `scripts/precompute-upgrades.mjs` | Ranks gear per rotation for the upgrades section (`web/sim/upgrades.json`) |
 | `scripts/ah-prices.mjs`, `web/js/prices.js` | Auction house prices for crafted upgrades (`ah-prices` branch) |
 | `scripts/availability.mjs`, `data/forever-availability.json` | The hand-kept list of what Forever has not released yet, applied at build time |
-| `scripts/make-sample-log.mjs`, `scripts/make-sample.mjs` | Regenerate the sample report (see above; the second needs Playwright installed) |
-| `tests/` | Unit tests (`*_test.mjs`, run by `npm test`), the sample log fixture, and a few dev CLIs (`run_analysis.mjs`, `run_wcl.mjs`, `wcl_mock.mjs`) |
+| `scripts/make-sample-log.mjs`, `scripts/make-sample.mjs` | Regenerate the sample report (see above; the second needs `npm install` for Playwright) |
+| `tests/` | Unit tests (`*_test.mjs`, run by `npm test`) and the sample log fixture |
+| `scripts/dev/` | Dev tools, not tests: `run_analysis.mjs`, `run_wcl.mjs`, `wcl_mock.mjs`, `make_fixture.mjs` |
 | `addon/WarriorTips/` | The in-game addon |
 | `SIM_REF` | The pinned wowsims/forever commit |
 
@@ -159,7 +160,7 @@ Private reports need the viewer to sign in, which needs a public Warcraft Logs A
 The page only offers sign-in when a report fails to load because it is private. For a local copy, add
 `http://localhost:8000/` as a second redirect URL.
 
-`node tests/wcl_mock.mjs tests/fixture-WoWCombatLog.txt` turns the sample log into Warcraft Logs API responses, for testing the import offline.
+`node scripts/dev/wcl_mock.mjs tests/fixture-WoWCombatLog.txt` turns the sample log into Warcraft Logs API responses, for testing the import offline.
 
 ## Security
 

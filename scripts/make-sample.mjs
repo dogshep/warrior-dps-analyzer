@@ -1,7 +1,7 @@
 // Builds web/sample/sample-report.json, the finished results behind "Try a sample report". It serves web/ locally,
 // opens the page in headless Chromium, loads web/sample/sample-WoWCombatLog.txt like a dropped file, presses
 // Analyze and Find upgrades, and saves the parts of the results page that sample.js fills back in.
-// Needs a built sim in web/sim (scripts/build-sim.sh, with the upgrade list) and Playwright.
+// Needs a built sim in web/sim (scripts/build-sim.sh, with the upgrade list) and Playwright (`npm install` in the repo root).
 // Usage: node scripts/make-sample.mjs [iterations]   (default 1000; more makes the numbers steadier)
 import { createServer } from 'node:http';
 import { readFile, writeFile } from 'node:fs/promises';
