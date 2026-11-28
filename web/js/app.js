@@ -90,27 +90,51 @@ function fillFights() {
   if (boss >= 0) $('fight').value = String(boss);
 }
 
+// Downloads the chosen fight of the loaded Warcraft Logs report into `parser`. False when there is nothing to
+// analyze (the reason is shown under the link box).
+async function loadWclFight(guid, fight) {
+  $('go').disabled = true;
+  $('wclStatus').textContent = 'Loading the fight from Warcraft Logs…';
+  try {
+    parser = await wcl.loadFight(report, report.warriors.find(w => w.guid === guid), fight);
+    if (!parser.players.get(guid).casts.length && !parser.players.get(guid).damage.length) {
+      $('go').disabled = false;
+      $('wclStatus').innerHTML = `<span class="warn">${esc($('who').selectedOptions[0].textContent)} has no casts or damage in this fight. Pick another fight.</span>`;
+      return false;
+    }
+    $('wclStatus').textContent = '';
+    return true;
+  } catch (e) {
+    $('go').disabled = false;
+    wclError(e);
+    return false;
+  }
+}
+
+// Two sims: your setup, and the same with full consumables. With 2+ workers they run side by side, each split across
+// half of them; with one they run one after the other. The bar covers both. Also returns the time per fight on one
+// worker, for the upgrades estimate (the engine is already running, so it is the sim alone).
+async function runBothSims(a, names, apls, opts) {
+  const { iterations } = opts;
+  const half = Math.max(1, Math.floor(pool.THREADS / 2));
+  const side = pool.THREADS >= 2;
+  const idxMine = Array.from({ length: half }, (_, i) => i), idxBest = side ? idxMine.map(i => i + half) : idxMine;
+  const prog = [0, 0];
+  const tick = run => done => { prog[run] = done; const f = (prog[0] + prog[1]) / 2; showProgress(`Simming your gear and with full consumables (${iterations} fights each)… ${Math.round(f * 100)}%`, f); };
+  const reqMine = buildRequest(a, parser, names, apls, opts), reqBest = buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' });
+  const t1 = performance.now();
+  const [mine, best] = side
+    ? await Promise.all([pool.simSplit(reqMine, tick(0), idxMine), pool.simSplit(reqBest, tick(1), idxBest)])
+    : [await pool.simSplit(reqMine, tick(0), idxMine), await pool.simSplit(reqBest, tick(1), idxBest)];
+  const perWorker = side ? Math.ceil(iterations / half) : 2 * iterations;
+  return { mine, best, msPerIter: (performance.now() - t1) / perWorker };
+}
+
 async function analyze() {
   const { names, apls } = await data;
   const guid = $('who').value;
   const fight = fights[Number($('fight').value)];
-  if (report) {
-    $('go').disabled = true;
-    $('wclStatus').textContent = 'Loading the fight from Warcraft Logs…';
-    try {
-      parser = await wcl.loadFight(report, report.warriors.find(w => w.guid === guid), fight);
-      const p = parser.players.get(guid);
-      if (!p.casts.length && !p.damage.length) {
-        $('go').disabled = false;
-        $('wclStatus').innerHTML = `<span class="warn">${esc($('who').selectedOptions[0].textContent)} has no casts or damage in this fight. Pick another fight.</span>`;
-        return;
-      }
-      $('wclStatus').textContent = '';
-    } catch (e) {
-      $('go').disabled = false;
-      return wclError(e);
-    }
-  }
+  if (report && !(await loadWclFight(guid, fight))) return;
   const a = analyzeFight(parser, guid, fight, names);
   if ($('preset').value) a.preset = $('preset').value;
   const iterations = Math.min(MAX_ITERATIONS, Math.max(MIN_ITERATIONS, Math.round(Number($('iters').value)) || DEFAULT_ITERATIONS));
@@ -132,21 +156,8 @@ async function analyze() {
     const cons = detectConsumes(a, parser, names);
     // Starts the engine if it isn't running yet (usually it is, from when the log loaded).
     await pool.warm(pool.THREADS, done => showProgress(done >= 1 ? 'Starting the sim engine…' : `Downloading the sim (first run only)… ${Math.round(done * 100)}%`, done));
-    // Two runs: your setup, and the same with full consumables. With 2+ workers they run side by side, each
-    // split across half of them; with one they run one after the other. The bar covers both.
-    const half = Math.max(1, Math.floor(pool.THREADS / 2));
-    const side = pool.THREADS >= 2;
-    const idxMine = Array.from({ length: half }, (_, i) => i), idxBest = side ? idxMine.map(i => i + half) : idxMine;
-    const prog = [0, 0];
-    const tick = run => done => { prog[run] = done; const f = (prog[0] + prog[1]) / 2; showProgress(`Simming your gear and with full consumables (${iterations} fights each)… ${Math.round(f * 100)}%`, f); };
-    const reqMine = buildRequest(a, parser, names, apls, opts), reqBest = buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' });
-    const t1 = performance.now();
-    const [mine, best] = side
-      ? await Promise.all([pool.simSplit(reqMine, tick(0), idxMine), pool.simSplit(reqBest, tick(1), idxBest)])
-      : [await pool.simSplit(reqMine, tick(0), idxMine), await pool.simSplit(reqBest, tick(1), idxBest)];
-    // Time per fight on one worker, for the upgrades estimate. The engine was already running, so this is the sim alone.
-    const perWorker = side ? Math.ceil(iterations / half) : 2 * iterations;
-    last = { a, parser, opts, msPerIter: (performance.now() - t1) / perWorker };
+    const { mine, best, msPerIter } = await runBothSims(a, names, apls, opts);
+    last = { a, parser, opts, msPerIter };
     resetUpgrades();
     const s = compareToSim(mine, names, mine.iterations || iterations);
     const ideal = compareToSim(best, names, best.iterations || iterations);
