@@ -18,7 +18,7 @@
   <section id="drop" class="card drop">
     <input type="file" id="file" accept=".txt,.log" hidden>
     <p><strong>Drop <code>WoWCombatLog-*.txt</code> here</strong> or <button id="pick" class="link">choose a file</button></p>
-    <p class="hint">Find it in <code>World of Warcraft/_classic_era_/Logs/</code>. Type <code>/combatlog</code> before a raid, and turn on <em>Advanced Combat Logging</em> (System, Network) so your gear is recorded.</p>
+    <p class="hint">Find it in <code>World of Warcraft/_forever_/Logs/</code>. Type <code>/combatlog</code> before a raid, and turn on <em>Advanced Combat Logging</em> (System, Network) so your gear is recorded.</p>
     <div id="progress" class="bar" hidden><span></span></div>
     <p class="hint">No log handy? <button id="sampleGo" class="link">Try a sample report</button> to see what the analyzer finds.</p>
   </section>
@@ -70,7 +70,7 @@
       <h2>Execute phase</h2>
       <p id="execSum"></p>
       <table id="execTable"></table>
-      <p class="hint">Under 20% health the sim presses Execute before Bloodthirst and Whirlwind, and queues Heroic Strike only above 60 rage.</p>
+      <p class="hint">Under 20% health the sim presses Execute before Bloodthirst and Whirlwind, and queues Heroic Strike only above <span id="hsRage">60</span> rage.</p>
     </div>
     <div class="card" id="upg">
       <h2>Gear upgrades</h2>
@@ -78,7 +78,7 @@
       <div class="row inline opts">
         <span class="hint">Sources:</span>
         <label class="chk"><input type="checkbox" class="upgKind" value="d" checked> Dungeons</label>
-        <label class="chk" title="Raids open in WoW Forever on 9 December 2026. Until then no raid loot, raid quest reward or raid reputation item is suggested."><input type="checkbox" class="upgKind" value="r" checked> Raids</label>
+        <label class="chk" title="No raid loot, raid quest reward or raid reputation item is suggested until WoW Forever opens its raids."><input type="checkbox" class="upgKind" value="r" checked> Raids</label>
         <label class="chk"><input type="checkbox" class="upgKind" value="c" checked> Crafted</label>
         <label class="chk"><input type="checkbox" class="upgKind" value="q" checked> Quests</label>
         <label class="chk"><input type="checkbox" class="upgKind" value="v" checked> Vendors</label>

@@ -13,7 +13,7 @@ export const MAIN_ATTACKS = {
   Whirlwind: { cd: 10000, cost: 25 },
 };
 const HS_MIN_RAGE = 40;
-const HS_EXECUTE_RAGE = 60;
+export const HS_EXECUTE_RAGE = 60;
 // A main attack pressed more than this after it was ready is treated as a pause (moving, a mechanic), not a wait for rage.
 const MAX_WAIT_MS = 6000;
 // Rage samples older than this say nothing about rage now.

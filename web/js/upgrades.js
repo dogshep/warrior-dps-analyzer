@@ -2,9 +2,9 @@
 //
 // The heavy ranking happens at build time (scripts/precompute-upgrades.mjs writes sim/upgrades.json): every
 // candidate was priced with stat weights, or simmed when weights can't price it (weapons, procs, on-use
-// effects), against a reference gear set. Here the page picks a few
-// of those that beat what the player wears and sims each one swapped into the player's own gear, so the DPS
-// numbers it shows are for their setup (their other items, set bonuses, enchants, buffs and fight).
+// effects), against a reference gear set. Here the page picks a few of those that beat what the player wears
+// and sims each one swapped into the player's own gear, so the DPS numbers it shows are for their setup
+// (their other items, set bonuses, enchants, buffs and fight).
 
 // Item pools, keyed by name, with the sim slot each is simmed in. Rings and trinkets share one pool for both slots.
 export const SLOT_POOLS = { head: 0, neck: 1, shoulder: 2, back: 3, chest: 4, wrist: 5, hands: 6, waist: 7, legs: 8, feet: 9, ring: 10, trinket: 12, mh: 14, oh: 15, ranged: 16 };

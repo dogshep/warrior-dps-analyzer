@@ -3,7 +3,7 @@
 # Usage: scripts/build-sim.sh [git-ref]   (default: the commit in SIM_REF)
 # WOWSIMS_DIR reuses an existing wowsims checkout; SKIP_FETCH=1 builds it as it is checked out.
 # SKIP_UPGRADES=1 skips the slow gear ranking (scripts/precompute-upgrades.mjs) for the upgrades section.
-# Needs: git, Go (the version in wowsims/forever's go.mod), python3 with grpcio-tools, protoc-gen-go, Node 22.
+# Needs: git, Go (the version in wowsims/forever's go.mod), python3 with grpcio-tools, protoc-gen-go, Node (see .node-version).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REF="${1:-$(tr -d '[:space:]' < "$ROOT/SIM_REF")}"
