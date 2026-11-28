@@ -5,6 +5,7 @@ import { rageReport, rageTips, executeReport, executeTips } from './rage.js';
 import { sum, median, fmt } from './format.js';
 import { DEFAULT_ITERATIONS } from './sim-config.js';
 import { PULL_GAP_MS } from './logparser.js';
+import { ITEM, ITEM_TYPE_WEAPON, HAND_TWO } from './fields.js';
 
 // Log inventory slots 1..19 (0-based here) in the order wowsims' EquipmentSpec wants them.
 const LOG_TO_SIM_SLOTS = [0, 1, 2, 14, 4, 8, 9, 5, 6, 7, 10, 11, 12, 13, 15, 16, 17];
@@ -70,9 +71,9 @@ export function auditEnchants(gear, names) {
     const it = gear[LOG_TO_SIM_SLOTS[slot]];
     if (!it || !it.id) continue;
     const info = names.items[it.id];
-    if (slot === 15 && info && info[1] !== 13) continue;
+    if (slot === 15 && info && info[ITEM.TYPE] !== ITEM_TYPE_WEAPON) continue;
     let list = best;
-    if (slot === 14 && info && info[4] === 4) list = [...best, ...TWO_HAND_EXTRA.filter(([id]) => inForever(names, id, slot))];
+    if (slot === 14 && info && info[ITEM.HAND] === HAND_TWO) list = [...best, ...TWO_HAND_EXTRA.filter(([id]) => inForever(names, id, slot))];
     const ok = list.some(([id]) => id === it.enchant) || all.some(([id]) => id === it.enchant);
     out.push({ slot, label: SLOT_LABEL[slot], have: it.enchant, haveName: it.enchant ? enchantName(names, it.enchant, slot).replace(/^Enchant [\w\s-]+? - /, '') : '', ok, best: list.map(([, n]) => n) });
   }
@@ -219,7 +220,7 @@ export function analyzeFight(parser, guid, fight, names) {
   const combatant = parser.combatants.get(guid);
   const spec = casts.some(c => c.name === 'Mortal Strike') ? 'arms' : 'fury';
   const mh = combatant?.items?.[15];
-  const twoHand = mh && names.items[mh.id]?.[4] === 4;
+  const twoHand = mh && names.items[mh.id]?.[ITEM.HAND] === HAND_TWO;
   const preset = spec === 'arms' ? 'arms' : twoHand ? 'fury_2h' : 'fury';
 
   const pullSpans = pulls && pulls.map(pl => ({ start: pl.start, end: pl.end, targets: countTargets(pl.targets, pl.dmg) }));
@@ -314,7 +315,7 @@ export function compareToSim(simResult, names, iterations) {
   const simCasts = new Map(), simDmg = new Map();
   for (const act of p.actions || []) {
     const id = act.id.spellId || act.id.itemId;
-    const nm = act.id.spellId ? (names.spells[id] || String(id)).replace(/ \(Rank \d+\)$/, '') : act.id.otherId === 'OtherActionAttack' ? 'Melee' : act.id.itemId ? (names.items[id]?.[0] || String(id)) : act.id.otherId;
+    const nm = act.id.spellId ? (names.spells[id] || String(id)).replace(/ \(Rank \d+\)$/, '') : act.id.otherId === 'OtherActionAttack' ? 'Melee' : act.id.itemId ? (names.items[id]?.[ITEM.NAME] || String(id)) : act.id.otherId;
     const c = sum(act.targets.map(t => t.casts));
     const d = sum(act.targets.map(t => t.damage));
     simCasts.set(nm, (simCasts.get(nm) || 0) + c);

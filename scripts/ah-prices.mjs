@@ -20,6 +20,7 @@
 // } with prices in copper per item, from buyouts only. materials is what buying one craft's reagents from the
 // cheapest listings costs, and unpriced how many of its reagents had too few listed to buy (left out of that sum).
 import { readFileSync, writeFileSync } from 'node:fs';
+import { SRC, KIND_CRAFTED } from '../web/js/fields.js';
 
 export const REGIONS = ['us', 'eu'];
 // Realm type -> ruleset id and house ids (Alliance, Horde). Hardcore houses carry no auctions; Blackwater is the
@@ -33,7 +34,7 @@ export const MARKETS = {
 
 // The crafted items in an upgrades.json (source kind 'c'), as numbers.
 export function craftedIds(upgrades) {
-  return Object.entries(upgrades.items || {}).filter(([, m]) => String(m[3] || '').includes('c')).map(([id]) => Number(id));
+  return Object.entries(upgrades.items || {}).filter(([, m]) => String(m[SRC.KINDS] || '').includes(KIND_CRAFTED)).map(([id]) => Number(id));
 }
 
 // Crafting professions with gear recipes: Blacksmithing, Leatherworking, Tailoring, Engineering.
