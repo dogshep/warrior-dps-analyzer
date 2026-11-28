@@ -1,8 +1,9 @@
-// Runs web/js/sim-worker.js in a vm with a stub engine: the message protocol, chunking and merge of results.
+// Runs web/js/sim-worker.js in a vm with a stub engine: the message protocol and the chunking. The chunk results are merged by the page (simpool.js).
 // Usage: node tests/sim_worker_test.mjs
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
+import { mergeRuns } from '../web/js/simpool.js';
 
 const src = readFileSync(new URL('../web/js/sim-worker.js', import.meta.url), 'utf8');
 const sent = [], calls = [];
@@ -43,24 +44,26 @@ assert.deepEqual(calls.map(c => c.iterations), [250, 250, 250, 250]);
 assert.deepEqual(calls.map(c => c.randomSeed), ['10', '7929', '15848', '23767']);
 const progress = out.filter(m => m.progress).map(m => m.progress.done);
 assert.deepEqual(progress, [0.25, 0.5, 0.75, 1]);
-const res = out.find(m => m.result).result;
-assert.equal(res.iterations, 1000);
-const pl = res.raidMetrics.parties[0].players[0];
-assert.equal(pl.dps.avg, 250); // mean of 100, 200, 300, 400
-// pooled variance: mean of (10^2 + (avg_i - 250)^2)
+// One run per chunk, each with its own iteration count, DPS and actions, for the page to merge.
+const runs = out.find(m => m.result).result;
+assert.deepEqual(runs.map(r => r.iterations), [250, 250, 250, 250]);
+assert.deepEqual(runs.map(r => r.raidMetrics.parties[0].players[0].dps.avg), [100, 200, 300, 400]);
+assert.equal(runs[3].raidMetrics.parties[0].players[0].actions.length, 1);
+// Merged by the page, the chunks give one result: the mean, a pooled deviation, all actions, all iterations.
+const merged = mergeRuns(runs);
+const pl = merged.raidMetrics.parties[0].players[0];
+assert.equal(merged.iterations, 1000);
+assert.equal(pl.dps.avg, 250);
 assert.ok(Math.abs(pl.dps.stdev - Math.sqrt((4 * 100 + 150 ** 2 + 50 ** 2 + 50 ** 2 + 150 ** 2) / 4)) < 1e-9);
 assert.equal(pl.actions.length, 4);
 
-// Few iterations stay in one chunk; the count is clamped to 1..5000 and defaults to 300.
+// Few iterations stay in one chunk.
 calls.length = 0;
-await send({ id: 3, request: req(20, '1') });
+out = await send({ id: 3, request: req(20, '1') });
 assert.deepEqual(calls.map(c => c.iterations), [20]);
+assert.equal(out.find(m => m.result).result.length, 1);
 calls.length = 0;
-await send({ id: 4, request: req(99999, '1') });
-assert.equal(calls.length * calls[0].iterations, 5000);
-calls.length = 0;
-await send({ id: 5, request: req(undefined, undefined) });
-assert.equal(calls.length * calls[0].iterations, 300);
+await send({ id: 4, request: req(undefined, undefined) });
 assert.equal(calls[0].randomSeed, '1');
 
 // Engine errors come back as {error} with only the first line.

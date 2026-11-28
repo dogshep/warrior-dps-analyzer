@@ -4,7 +4,7 @@ import { showSample, clearSample, sampleLog } from './sample.js';
 import { $, esc } from './format.js';
 import * as pool from './simpool.js';
 import { HS_EXECUTE_RAGE } from './rage.js';
-import { DEFAULT_ITERATIONS, MIN_ITERATIONS, MAX_ITERATIONS } from './sim-config.js';
+import { DEFAULT_ITERATIONS, MIN_ITERATIONS, MAX_ITERATIONS, clampIterations } from './sim-config.js';
 import { tidyTips } from './tips-ui.js';
 import { cooldownsHtml, executeView, statsHtml, tipsHtml, tablesHtml } from './render.js';
 import { initUpgrades } from './upgrades-ui.js';
@@ -137,7 +137,7 @@ async function analyze() {
   if (report && !(await loadWclFight(guid, fight))) return;
   const a = analyzeFight(parser, guid, fight, names);
   if ($('preset').value) a.preset = $('preset').value;
-  const iterations = Math.min(MAX_ITERATIONS, Math.max(MIN_ITERATIONS, Math.round(Number($('iters').value)) || DEFAULT_ITERATIONS));
+  const iterations = clampIterations($('iters').value, MIN_ITERATIONS);
   $('iters').value = String(iterations);
   const opts = { iterations, race: $('race').value || undefined, talents: $('talents').value.trim() || undefined };
 
