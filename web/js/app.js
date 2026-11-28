@@ -1,5 +1,6 @@
 import { parseFile } from './logparser.js';
 import * as wcl from './wcl.js';
+import { showSample, clearSample, sampleLog } from './sample.js';
 import { mmss } from './cooldowns.js';
 import * as pool from './simpool.js';
 import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
@@ -89,6 +90,7 @@ async function analyze() {
   $('iters').value = String(iterations);
   const opts = { iterations, race: $('race').value || undefined, talents: $('talents').value.trim() || undefined };
 
+  clearSample();
   $('out').hidden = false;
   last = null;
   resetUpgrades();
@@ -268,6 +270,15 @@ function wclError(e, link) {
 
 $('wclGo').onclick = () => loadWcl($('wcl').value);
 $('wcl').onkeydown = e => { if (e.key === 'Enter') loadWcl($('wcl').value); };
+// The sample report: finished results for a made-up fight, shown without running the sim (see sample.js).
+async function trySample() {
+  if (!(await showSample())) alert('The sample report could not be loaded. Try again in a moment.');
+}
+$('sampleGo').onclick = trySample;
+// The same log through the real analyzer: it loads like a dropped file, then Analyze runs the sim as usual.
+$('sampleReal').onclick = () => sampleLog().then(load).then(() => $('pickers').scrollIntoView({ behavior: 'smooth' })).catch(e => alert(e.message));
+// A link to the page with #sample opens the sample right away.
+if (location.hash === '#sample') trySample();
 wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
 // Gear upgrades. Each candidate is one sim of the player's gear with one item swapped, compared with a sim of their
 // current gear. Two sims of different gear drift apart in their random rolls, so the fight count sets how

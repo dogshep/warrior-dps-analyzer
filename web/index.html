@@ -20,6 +20,7 @@
     <p><strong>Drop <code>WoWCombatLog-*.txt</code> here</strong> or <button id="pick" class="link">choose a file</button></p>
     <p class="hint">Find it in <code>World of Warcraft/_classic_era_/Logs/</code>. Type <code>/combatlog</code> before a raid, and turn on <em>Advanced Combat Logging</em> (System, Network) so your gear is recorded.</p>
     <div id="progress" class="bar" hidden><span></span></div>
+    <p class="hint">No log handy? <button id="sampleGo" class="link">Try a sample report</button> to see what the analyzer finds.</p>
   </section>
 
   <section class="card">
@@ -49,6 +50,11 @@
   </section>
 
   <section id="out" hidden>
+    <div id="sampleBanner" class="card sample-banner" hidden>
+      <h2>Sample report</h2>
+      <p>This is a made-up Fury warrior on Onyxia, not a real player. The results were worked out ahead of time, so nothing is simmed and it loads at once. Drop in your own log or paste a Warcraft Logs link above to get yours.</p>
+      <p class="hint"><button id="sampleReal" class="link">Run the sample log for real</button> to watch the sim work on it, or <a href="sample/sample-WoWCombatLog.txt" download>download the sample log</a>.</p>
+    </div>
     <div class="stats" id="stats"></div>
     <div class="card">
       <h2>Try this next run</h2>
