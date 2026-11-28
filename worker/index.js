@@ -68,10 +68,46 @@ async function sha(text) {
   return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// A good answer starts with the report and has no top-level errors. Checking the text rather than parsing it
-// keeps big event pages (several MB) from using up the Worker's CPU time.
+// A good answer starts with the report. Event pages can be several MB, so the Worker never reads one whole: it
+// looks at the first bytes, then streams the body on to the page and into the cache as it arrives (the free
+// plan allows 10 ms of CPU, and decoding and re-encoding a 3 MB page as text took about that).
 const GOOD_START = /^\s*\{\s*"data"\s*:\s*\{\s*"reportData"\s*:\s*\{\s*"report"\s*:\s*\{/;
-const looksGood = text => GOOD_START.test(text.slice(0, 200)) && !text.slice(-4096).includes('"errors"');
+const HEAD_BYTES = 200;
+const TAIL_BYTES = 4096;
+
+const concat = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; };
+
+// Reads the first HEAD_BYTES of a body (all of it, if shorter). Returns the text of those bytes and a stream that
+// replays what was read, followed by the rest.
+async function peek(body) {
+  const reader = body.getReader();
+  const chunks = [];
+  let head = new Uint8Array(0);
+  while (head.length < HEAD_BYTES) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    head = concat(head, value.subarray(0, HEAD_BYTES - head.length));
+  }
+  const stream = new ReadableStream({
+    start(c) { for (const ch of chunks) c.enqueue(ch); },
+    async pull(c) { const { done, value } = await reader.read(); done ? c.close() : c.enqueue(value); },
+    cancel(reason) { return reader.cancel(reason); },
+  });
+  return { head: new TextDecoder().decode(head), stream };
+}
+
+// Passes a body through unchanged and keeps its last TAIL_BYTES, to check for GraphQL errors once it has ended.
+function tailOf(stream) {
+  let tail = new Uint8Array(0);
+  const out = stream.pipeThrough(new TransformStream({
+    transform(ch, c) {
+      tail = ch.length >= TAIL_BYTES ? ch.slice(-TAIL_BYTES) : concat(tail, ch).slice(-TAIL_BYTES);
+      c.enqueue(ch);
+    },
+  }));
+  return { stream: out, hasErrors: () => new TextDecoder().decode(tail).includes('"errors"') };
+}
 
 // Warcraft Logs' wording for a report the site's client can't see.
 const PRIVATE = /permission|private|does not exist|not found/i;
@@ -83,7 +119,7 @@ function errorOf(text) {
 export default {
   async fetch(request, env, ctx) {
     const origin = allowedOrigin(request.headers.get('Origin'), env);
-    const cors = origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', Vary: 'Origin' } : {};
+    const cors = origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Expose-Headers': 'X-Cache', 'Timing-Allow-Origin': origin, Vary: 'Origin' } : {};
     if (request.method === 'OPTIONS') return new Response(null, { status: origin ? 204 : 403, headers: cors });
     if (!origin) return json({ error: 'origin not allowed' }, 403, cors);
     if (request.method !== 'POST') return json({ error: 'POST only' }, 405, cors);
@@ -122,11 +158,17 @@ export default {
         cachedToken = null; // expired or revoked: get a new one and try once more
       }
       if (res.status === 429) return json({ error: 'rate limited' }, 429, cors, { 'Retry-After': '60' });
-      const out = await res.text();
-      if (res.ok && looksGood(out)) {
-        remember(out, 200, CACHE_SECONDS);
-        return new Response(out, { status: 200, headers: { 'Content-Type': 'application/json', ...cors } });
+      const { head, stream } = await peek(res.body);
+      if (res.ok && GOOD_START.test(head)) {
+        // One copy to the page, one to the cache. A page that ends in GraphQL errors is taken back out of the cache.
+        const [toPage, toCache] = stream.tee();
+        const cached = tailOf(toCache);
+        const headers = { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${CACHE_SECONDS}` };
+        ctx.waitUntil(cache.put(key, new Response(cached.stream, { status: 200, headers })).then(() => (cached.hasErrors() ? cache.delete(key) : undefined)));
+        return new Response(toPage, { status: 200, headers: { 'Content-Type': 'application/json', ...cors, 'X-Cache': 'miss' } });
       }
+      // Not a good answer: these are small, so read the rest to see what went wrong.
+      const out = await new Response(stream).text();
       const err = errorOf(out);
       // 404 means a private report, or one this API address doesn't know: the page asks the viewer to sign in.
       // Anything else (a bad query, a Warcraft Logs outage) is a 502, so the page doesn't blame the report.

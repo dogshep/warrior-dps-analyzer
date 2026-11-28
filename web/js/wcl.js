@@ -130,7 +130,8 @@ async function proxy(fetchImpl = fetch) {
 async function viaProxy(url, op, variables, fetchImpl) {
   const res = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op, variables }) });
   const data = await res.json().catch(() => ({}));
-  if (res.ok && data.data?.reportData?.report) return data.data;
+  // The Worker streams good answers through, so an answer that ends in GraphQL errors arrives as a 200.
+  if (res.ok && data.data?.reportData?.report && !data.errors) return data.data;
   // Private reports (404) and an exhausted shared quota (429) need the viewer's own sign-in.
   if (res.status === 404 || res.status === 429) {
     const e = new Error(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report needs a Warcraft Logs sign-in (it may be private).');
