@@ -20,6 +20,7 @@
 // } with prices in copper per item, from buyouts only. materials is what buying one craft's reagents from the
 // cheapest listings costs, and unpriced how many of its reagents had too few listed to buy (left out of that sum).
 import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { SRC, KIND_CRAFTED } from '../web/js/fields.js';
 
 export const REGIONS = ['us', 'eu'];
@@ -202,6 +203,6 @@ async function main() {
   console.log(`${outPath}: ${ok} houses, ${failed} failed`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(e => { console.error(e.stack || e.message); process.exit(1); });
 }
