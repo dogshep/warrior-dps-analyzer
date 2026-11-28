@@ -1,30 +1,27 @@
 // Runs the wowsims Forever sim (WebAssembly) off the main thread.
-// In:  {id, request}
-// Out: {id, progress: {stage: 'download' | 'sim', done: 0..1}} while working, then {id, result} or {id, error}.
+// In:  {id, module} with the compiled sim (see simpool.js): starts the engine, then answers {id, result: 'ready'}.
+//      {id, request}: runs a sim. Without a module first, the worker downloads the sim itself.
+// Out: {id, progress: {stage: 'sim', done: 0..1}} while working, then {id, result} or {id, error}.
 importScripts('../sim/wasm_exec.js');
 
 let ready = null;
-function load(report) {
+function load(module) {
   ready ??= (async () => {
-    const res = await fetch('../sim/lib.wasm.gz');
-    if (!res.ok) throw new Error(`Could not load the sim (${res.status}). Run scripts/build-sim.sh first.`);
-    const total = Number(res.headers.get('content-length')) || 6.4e6;
-    let got = 0;
-    const counted = res.body.pipeThrough(new TransformStream({
-      transform(chunk, ctl) { got += chunk.length; report(Math.min(1, got / total)); ctl.enqueue(chunk); },
-    }));
-    // Compiles while it downloads instead of after.
-    const wasm = new Response(counted.pipeThrough(new DecompressionStream('gzip')), { headers: { 'Content-Type': 'application/wasm' } });
+    if (!module) {
+      const res = await fetch('../sim/lib.wasm.gz');
+      if (!res.ok) throw new Error(`Could not load the sim (${res.status}). Run scripts/build-sim.sh first.`);
+      module = await WebAssembly.compileStreaming(new Response(res.body.pipeThrough(new DecompressionStream('gzip')), { headers: { 'Content-Type': 'application/wasm' } }));
+    }
     const go = new Go();
     const done = new Promise(r => (self.wasmready = r));
-    const { instance } = await WebAssembly.instantiateStreaming(wasm, go.importObject);
-    go.run(instance);
+    go.run(await WebAssembly.instantiate(module, go.importObject));
     await done;
   })();
   return ready;
 }
 
-const CHUNKS = 10;
+// Progress steps per sim. Each step is a separate sim call with about 30 ms of setup, so keep it small.
+const CHUNKS = 4;
 
 // Runs the iterations in chunks so progress can be reported, then merges them: DPS is the mean of equal-sized
 // chunks, and action metrics are concatenated (they are sums over iterations, which the page adds up by name).
@@ -50,10 +47,10 @@ async function run(request, report) {
 }
 
 self.onmessage = async ({ data }) => {
-  const report = stage => done => self.postMessage({ id: data.id, progress: { stage, done } });
   try {
-    await load(report('download'));
-    const result = await run(data.request, report('sim'));
+    await load(data.module);
+    if (!data.request) { self.postMessage({ id: data.id, result: 'ready' }); return; }
+    const result = await run(data.request, done => self.postMessage({ id: data.id, progress: { stage: 'sim', done } }));
     self.postMessage({ id: data.id, result });
   } catch (e) {
     self.postMessage({ id: data.id, error: String(e.message || e) });

@@ -1,6 +1,7 @@
 import { parseFile } from './logparser.js';
 import * as wcl from './wcl.js';
 import { mmss } from './cooldowns.js';
+import * as pool from './simpool.js';
 import { pickCandidates, swapRequest, bestPerSlot } from './upgrades.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, LOG_TO_SIM_SLOTS, fmt } from './analyze.js';
 
@@ -18,43 +19,12 @@ const data = (async () => {
   return { names: safeNames(names), apls: Object.fromEntries(PRESETS.map((p, i) => [p, apls[i]])) };
 })();
 
-// One worker, created on first use, so the 6 MB sim only downloads when someone analyzes a fight.
-let worker, nextId = 0;
-const pending = new Map();
 const MAX_ITERATIONS = 5000;
-
-// Extra workers for the upgrade sims, which run side by side (one per spare CPU core, up to 4).
-let extra = [];
-
-// Stops running sims: the workers are thrown away (new ones start on the next run).
-function cancelSim() {
-  if (!worker && !extra.length) return;
-  for (const w of [worker, ...extra]) w && w.terminate();
-  worker = null;
-  extra = [];
-  for (const p of pending.values()) { const e = new Error('Sim cancelled.'); e.cancelled = true; p.reject(e); }
-  pending.clear();
-}
-
-function newWorker() {
-  const w = new Worker('js/sim-worker.js');
-  w.onmessage = ({ data: m }) => {
-    const p = pending.get(m.id);
-    if (!p) return;
-    if (m.progress) { p.onProgress && p.onProgress(m.progress); return; }
-    pending.delete(m.id);
-    m.error ? p.reject(new Error(m.error)) : p.resolve(m.result);
-  };
-  return w;
-}
-
-// w: which worker (0 is the main one, 1.. the extra ones).
-function sim(request, onProgress, w = 0) {
-  if (!worker) worker = newWorker();
-  while (w > extra.length) extra.push(newWorker());
-  const target = w ? extra[w - 1] : worker;
-  return new Promise((resolve, reject) => { const id = ++nextId; pending.set(id, { resolve, reject, onProgress }); target.postMessage({ id, request }); });
-}
+// Stops running sims (Cancel buttons, a new file, the upgrade time cap).
+const cancelSim = pool.cancel;
+// Starts the sim workers in the background once there is something to analyze, so the engine is usually
+// running by the time Analyze is pressed. A failure here shows up again, with its message, on Analyze.
+const prewarm = () => pool.warm().catch(() => {});
 
 // The progress bar under "Try this next run": label plus a 0..1 fill.
 function showProgress(label, done) {
@@ -77,10 +47,14 @@ async function load(file) {
   $('who').innerHTML = war.map(w => `<option value="${esc(w.guid)}">${esc(w.name)}${w.hasGear ? '' : ' (no gear in log)'}</option>`).join('');
   fillFights();
   $('pickers').hidden = false;
+  prewarm();
 }
 
 function fillFights() {
-  const fights = report ? report.fights : parser.fights($('who').value);
+  // A Warcraft Logs report lists every fight; keep the ones the chosen warrior was in (when the report says).
+  const fights = report ? report.fights.filter(f => !f.players || f.players.includes(Number($('who').value))) : parser.fights($('who').value);
+  $('go').disabled = !fights.length;
+  if (!fights.length) { $('fight').innerHTML = '<option>No fights with this warrior</option>'; $('fight')._fights = []; return; }
   $('fight').innerHTML = fights.map((f, i) => `<option value="${i}">${f.kind === 'boss' ? '⚔ ' : ''}${esc(f.name)} (${Math.round((f.end - f.start) / 1000)}s${f.kind === 'boss' && !f.success ? ', wipe' : ''})</option>`).join('');
   const boss = fights.findIndex(f => f.kind === 'boss');
   if (boss >= 0) $('fight').value = String(boss);
@@ -96,6 +70,12 @@ async function analyze() {
     $('wclStatus').textContent = 'Loading the fight from Warcraft Logs…';
     try {
       parser = await wcl.loadFight(report, report.warriors.find(w => w.guid === guid), fight);
+      const p = parser.players.get(guid);
+      if (!p.casts.length && !p.damage.length) {
+        $('go').disabled = false;
+        $('wclStatus').innerHTML = `<span class="warn">${esc($('who').selectedOptions[0].textContent)} has no casts or damage in this fight. Pick another fight.</span>`;
+        return;
+      }
       $('wclStatus').textContent = '';
     } catch (e) {
       $('go').disabled = false;
@@ -119,15 +99,23 @@ async function analyze() {
   $('cancel').hidden = false;
   try {
     const cons = detectConsumes(a, parser, names);
-    // Two runs, one after the other: your setup, then the same with full consumables. The bar covers both.
-    const step = (run, label) => ({ stage, done }) => stage === 'download'
-      ? (done >= 1 ? showProgress('Starting the sim engine…', 1) : showProgress(`Downloading the sim (first run only)… ${Math.round(done * 100)}%`, done))
-      : showProgress(`${label}… ${Math.round(((run + done) / 2) * 100)}%`, (run + done) / 2);
-    const mine = await sim(buildRequest(a, parser, names, apls, opts), step(0, `Simming your gear (${iterations} fights)`));
+    // Starts the engine if it isn't running yet (usually it is, from when the log loaded).
+    await pool.warm(pool.THREADS, done => showProgress(done >= 1 ? 'Starting the sim engine…' : `Downloading the sim (first run only)… ${Math.round(done * 100)}%`, done));
+    // Two runs: your setup, and the same with full consumables. With 2+ workers they run side by side, each
+    // split across half of them; with one they run one after the other. The bar covers both.
+    const half = Math.max(1, Math.floor(pool.THREADS / 2));
+    const side = pool.THREADS >= 2;
+    const idxMine = Array.from({ length: half }, (_, i) => i), idxBest = side ? idxMine.map(i => i + half) : idxMine;
+    const prog = [0, 0];
+    const tick = run => done => { prog[run] = done; const f = (prog[0] + prog[1]) / 2; showProgress(`Simming your gear and with full consumables (${iterations} fights each)… ${Math.round(f * 100)}%`, f); };
+    const reqMine = buildRequest(a, parser, names, apls, opts), reqBest = buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' });
     const t1 = performance.now();
-    const best = await sim(buildRequest(a, parser, names, apls, { ...opts, consumes: 'ideal' }), step(1, 'Simming with full consumables'));
-    // The second run never includes the download, so it times the sim itself, for the upgrades estimate.
-    last = { a, parser, opts, msPerIter: (performance.now() - t1) / (best.iterations || iterations) };
+    const [mine, best] = side
+      ? await Promise.all([pool.simSplit(reqMine, tick(0), idxMine), pool.simSplit(reqBest, tick(1), idxBest)])
+      : [await pool.simSplit(reqMine, tick(0), idxMine), await pool.simSplit(reqBest, tick(1), idxBest)];
+    // Time per fight on one worker, for the upgrades estimate. The engine was already running, so this is the sim alone.
+    const perWorker = side ? Math.ceil(iterations / half) : 2 * iterations;
+    last = { a, parser, opts, msPerIter: (performance.now() - t1) / perWorker };
     resetUpgrades();
     const s = compareToSim(mine, names, mine.iterations || iterations);
     const ideal = compareToSim(best, names, best.iterations || iterations);
@@ -246,9 +234,10 @@ async function loadWcl(link) {
   $('who').innerHTML = report.warriors.map(w => `<option value="${esc(w.guid)}">${esc(w.name)}</option>`).join('');
   if (ref.source && report.warriors.some(w => w.id === ref.source)) $('who').value = String(ref.source);
   fillFights();
-  const fi = report.fights.findIndex(f => f.id === ref.fight);
+  const fi = $('fight')._fights.findIndex(f => f.id === ref.fight);
   if (fi >= 0) $('fight').value = String(fi);
   $('pickers').hidden = false;
+  prewarm();
 }
 
 function wclError(e, link) {
@@ -274,7 +263,7 @@ const UPGRADE_ITERS = { min: 200, max: 1000 };
 const UPGRADE_TARGET_MS = 60000;
 // A hard stop: whatever is done by then is shown.
 const UPGRADE_TIME_CAP_MS = 120000;
-const UPGRADE_WORKERS = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+const UPGRADE_WORKERS = pool.THREADS;
 let upgradeTable = null;
 
 // The ticked source kinds, as the letters upgrades.json uses.
@@ -332,7 +321,7 @@ async function findUpgrades() {
     await Promise.all(Array.from({ length: UPGRADE_WORKERS }, async (_, w) => {
       for (let job; (job = queue.shift());) {
         try {
-          const r = await sim(job.req, tick(job.k, job.w), w);
+          const r = await pool.sim(job.req, tick(job.k, job.w), w);
           out.set(job.k, { ...r.raidMetrics.parties[0].players[0].dps, n: r.iterations });
         } catch (e) { if (!e.cancelled) throw e; return; }
       }

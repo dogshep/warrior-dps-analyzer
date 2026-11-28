@@ -4,7 +4,7 @@
 
 export const REPORT_QUERY = `query($code: String!) { reportData { report(code: $code) {
   title startTime
-  fights { id encounterID name startTime endTime kill }
+  fights { id encounterID name startTime endTime kill friendlyPlayers }
   masterData { actors(type: "Player") { id name subType server } abilities { gameID name } }
 } } }`;
 

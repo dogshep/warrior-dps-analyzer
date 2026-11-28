@@ -20,7 +20,7 @@ mine.sort((a, b) => a.timestamp - b.timestamp);
 const c = parser.combatants.get(w.guid);
 const info = [{ timestamp: f.start, type: 'combatantinfo', sourceID: 7, faction: 1, gear: c.items.map(i => ({ id: i.id, itemLevel: i.ilvl, permanentEnchant: i.enchant || undefined, temporaryEnchant: i.tempEnchant || undefined })), auras: c.auras.map(a => ({ source: 7, ability: a })) }];
 console.log(JSON.stringify({
-  report: { title: 'Molten Core test', startTime: 0, fights: [{ id: 1, encounterID: 672, name: 'Ragnaros', startTime: f.start, endTime: f.end, kill: true }],
+  report: { title: 'Molten Core test', startTime: 0, fights: [{ id: 1, encounterID: 672, name: 'Ragnaros', startTime: f.start, endTime: f.end, kill: true, friendlyPlayers: [7, 8] }],
     masterData: { actors: [{ id: 7, name: w.name, subType: 'Warrior', server: 'Test' }, { id: 8, name: 'Healbot', subType: 'Priest', server: 'Test' }], abilities: [...abilities].map(([gameID, name]) => ({ gameID, name })) } },
   events: { mine: { data: mine, nextPageTimestamp: null }, onMe: { data: [], nextPageTimestamp: null }, debuffs: { data: [], nextPageTimestamp: null }, deaths: { data: [], nextPageTimestamp: null }, info: { data: info } },
 }));
