@@ -63,6 +63,19 @@ async function token(id, secret) {
   return data.access_token;
 }
 
+// Log-only check of whether Blizzard's profession/recipe endpoints answer for Forever, which would give crafting
+// materials (and their cost) without scraping anyone. Never fails the run.
+async function probeRecipes(auth) {
+  for (const path of ['profession/index', 'profession/164', 'recipe/1']) {
+    const url = `https://us.api.blizzard.com/data/wow/${path}?namespace=static-forever-us&locale=en_US`;
+    try {
+      const res = await fetch(url, { headers: auth });
+      const body = await res.text();
+      console.log(`recipe probe ${path}: HTTP ${res.status} ${body.slice(0, 300).replace(/\s+/g, ' ')}`);
+    } catch (e) { console.log(`recipe probe ${path}: ${e.message}`); }
+  }
+}
+
 async function main() {
   const [upgradesPath, outPath] = process.argv.slice(2);
   const { BNET_CLIENT_ID: id, BNET_CLIENT_SECRET: secret } = process.env;
@@ -93,6 +106,7 @@ async function main() {
       }
     }
   }
+  await probeRecipes(auth);
   if (!ok) throw new Error('No auction house answered.');
   writeFileSync(outPath, JSON.stringify(out));
   console.log(`${outPath}: ${ok} houses, ${failed} failed`);
