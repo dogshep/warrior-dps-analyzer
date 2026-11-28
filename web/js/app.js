@@ -8,6 +8,7 @@ import { DEFAULT_ITERATIONS, MIN_ITERATIONS, MAX_ITERATIONS } from './sim-config
 import { pickCandidates, budget, swapRequest, bestPerSlot, yellowMiss, breaksHitCap, setChange, withoutSetRequest } from './upgrades.js';
 import { loadPrices, priceFor, materialsList, houseKey, gold, age } from './prices.js';
 import { safeNames, analyzeFight, buildRequest, compareToSim, suggestions, detectConsumes, missingConsumes, aplSpellNames, auditEnchants, enchantName, SLOT_NAMES, SLOT_ITEM_TYPE, LOG_TO_SIM_SLOTS } from './analyze.js';
+import { AuthRequiredError, CancelledError } from './errors.js';
 import { ITEM, ITEM_TYPE_WEAPON, SRC, KIND_CRAFTED } from './fields.js';
 
 $('hsRage').textContent = HS_EXECUTE_RAGE;
@@ -42,14 +43,26 @@ let parser = null, report = null;
 // The last analyzed fight, for "Find upgrades": {a, parser, opts, msPerIter}.
 let last = null;
 
+// Shows a message in a status element: kind 'warn' (red) or 'hint' (plain). Used instead of alert().
+function showStatus(el, msg, kind = 'warn') {
+  el.innerHTML = `<span class="${kind}">${esc(msg)}</span>`;
+}
+
 async function load(file) {
   cancelSim();
   report = null;
+  $('loadStatus').textContent = '';
   $('progress').hidden = false;
   const bar = $('progress').firstElementChild;
-  parser = await parseFile(file, f => (bar.style.width = `${Math.round(f * 100)}%`));
+  try {
+    parser = await parseFile(file, f => (bar.style.width = `${Math.round(f * 100)}%`));
+  } catch (e) {
+    $('progress').hidden = true;
+    showStatus($('loadStatus'), `Could not read this file: ${e.message || e}`);
+    return;
+  }
   const war = parser.warriors();
-  if (!war.length) { alert('No warriors found in this log.'); return; }
+  if (!war.length) { showStatus($('loadStatus'), 'No warriors found in this log.'); return; }
   $('who').innerHTML = war.map(w => `<option value="${esc(w.guid)}">${esc(w.name)}${w.hasGear ? '' : ' (no gear in log)'}</option>`).join('');
   fillFights();
   $('pickers').hidden = false;
@@ -133,7 +146,7 @@ async function analyze() {
     $('simnote').textContent = `${a.isRun ? `Dungeon run: your DPS counts only time in combat, and the sim fights a typical ${Math.round(a.simDur)}s pull, scaled to your ${a.pulls} pulls. ` : ''}Sim: ${a.preset.replace('_', ' ')} rotation, ${iterations} iterations of a ${Math.round(a.simDur || a.dur)}s fight against ${a.targetCount} target${a.targetCount > 1 ? 's' : ''}, with the buffs and consumables seen in your log. Consumables seen: ${cons.found.map(f => f.name).join(', ') || 'none'}.`;
   } catch (e) {
     renderTips(suggestions(a, null, null));
-    $('simnote').innerHTML = e.cancelled
+    $('simnote').innerHTML = e instanceof CancelledError
       ? 'Sim cancelled. These tips come from the log alone.'
       : `<span class="warn">The sim failed: ${esc(e.message)}</span>. These tips come from the log alone.`;
   } finally {
@@ -263,7 +276,7 @@ async function loadWcl(link) {
 // A private report (or one the site can't reach) asks before sending the viewer off to sign in.
 function wclError(e, link) {
   $('wclStatus').innerHTML = `<span class="warn">${esc(e.message || e)}</span>`;
-  if (e.needsAuth && link) {
+  if (e instanceof AuthRequiredError && link) {
     const b = document.createElement('button');
     b.className = 'link';
     b.textContent = 'Sign in to Warcraft Logs';
@@ -276,11 +289,11 @@ $('wclGo').onclick = () => loadWcl($('wcl').value);
 $('wcl').onkeydown = e => { if (e.key === 'Enter') loadWcl($('wcl').value); };
 // The sample report: finished results for a made-up fight, shown without running the sim (see sample.js).
 async function trySample() {
-  if (!(await showSample())) alert('The sample report could not be loaded. Try again in a moment.');
+  if (!(await showSample())) showStatus($('loadStatus'), 'The sample report could not be loaded. Try again in a moment.');
 }
 $('sampleGo').onclick = trySample;
 // The same log through the real analyzer: it loads like a dropped file, then Analyze runs the sim as usual.
-$('sampleReal').onclick = () => sampleLog().then(load).then(() => $('pickers').scrollIntoView({ behavior: 'smooth' })).catch(e => alert(e.message));
+$('sampleReal').onclick = () => sampleLog().then(load).then(() => $('pickers').scrollIntoView({ behavior: 'smooth' })).catch(e => showStatus($('loadStatus'), e.message));
 // A link to the page with #sample opens the sample right away.
 if (location.hash === '#sample') trySample();
 wcl.finishSignIn().then(link => { if (link) { $('wcl').value = link; loadWcl(link); } }).catch(wclError);
@@ -382,13 +395,13 @@ async function findUpgrades() {
         try {
           const r = await pool.sim(job.req, tick(job.k, job.w), w);
           out.set(job.k, { ...r.raidMetrics.parties[0].players[0].dps, n: r.iterations });
-        } catch (e) { if (!e.cancelled) throw e; return; }
+        } catch (e) { if (!(e instanceof CancelledError)) throw e; return; }
       }
     }));
     clearTimeout(timer);
     const secs = (performance.now() - t0) / 1000;
     const b = out.get('base');
-    if (!b) throw Object.assign(new Error('cancelled'), { cancelled: !capped, capped });
+    if (!b) throw new CancelledError('cancelled', { capped });
     const results = cands.flatMap((c, i) => {
       const r = out.get(i);
       return r ? [{ ...c, dps: r.avg, err: Math.sqrt((r.stdev ** 2) / r.n + (b.stdev ** 2) / b.n) }] : [];
@@ -406,8 +419,8 @@ async function findUpgrades() {
       (capped ? ` Stopped at the ${UPGRADE_TIME_CAP_MS / 1000}s limit; ${cands.length - results.length} were not simmed.` : '') +
       ` ± is the sim's margin for each gain (95%). The candidates were picked from items ranked ahead of time in pre-raid gear.`;
   } catch (e) {
-    $('upgOut').innerHTML = e.capped ? `<p class="hint">The sim of your current gear did not finish within ${UPGRADE_TIME_CAP_MS / 1000}s. Try fewer items.</p>`
-      : e.cancelled ? '<p class="hint">Cancelled.</p>' : `<p class="warn">${esc(e.message || e)}</p>`;
+    $('upgOut').innerHTML = e instanceof CancelledError && e.capped ? `<p class="hint">The sim of your current gear did not finish within ${UPGRADE_TIME_CAP_MS / 1000}s. Try fewer items.</p>`
+      : e instanceof CancelledError ? '<p class="hint">Cancelled.</p>' : `<p class="warn">${esc(e.message || e)}</p>`;
   } finally {
     clearTimeout(timer);
     $('upgGo').disabled = !last;

@@ -7,6 +7,7 @@
 // project site under dogshep.github.io shares one origin, and localStorage would hand it to all of them for a week.
 
 import { makePlayer } from './logparser.js';
+import { AuthRequiredError } from './errors.js';
 import { QUERIES, QUERY_VARS, WCL_SITE as SITE, wclApis } from './wcl-queries.js';
 
 const WCL_CLIENT_ID = '01a218c3-d235-70ca-8ae9-f6b8e8d40650'; // Public PKCE client, redirect https://dogshep.github.io/warrior-dps-analyzer/
@@ -116,9 +117,7 @@ async function viaProxy(url, op, variables, fetchImpl) {
   if (res.ok && data.data?.reportData?.report && !data.errors) return data.data;
   // Private reports (404) and an exhausted shared quota (429) need the viewer's own sign-in.
   if (res.status === 404 || res.status === 429) {
-    const e = new Error(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report is private, so Warcraft Logs only shares it with you signed in.');
-    e.needsAuth = true;
-    throw e;
+    throw new AuthRequiredError(res.status === 429 ? 'The shared Warcraft Logs quota is used up for now. Sign in to use your own.' : 'This report is private, so Warcraft Logs only shares it with you signed in.');
   }
   // Anything else is not about sign-in: say what went wrong.
   const why = typeof data.error === 'string' && data.error ? data.error.slice(0, 200) : `error ${res.status}`;
@@ -132,13 +131,13 @@ async function gql(op, variables, fetchImpl = fetch) {
   if (!t) {
     const url = await proxy(fetchImpl);
     if (url) return viaProxy(url, op, variables, fetchImpl);
-    const e = new Error('This copy of the page can only load reports after you sign in.'); e.needsAuth = true; throw e;
+    throw new AuthRequiredError('This copy of the page can only load reports after you sign in.');
   }
   const urls = apiUrl ? [apiUrl] : APIS;
   let lastErr;
   for (const url of urls) {
     const res = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` }, body: JSON.stringify({ query, variables }) });
-    if (res.status === 401) { signOut(); const e = new Error('Your Warcraft Logs sign-in expired. Sign in again.'); e.needsAuth = true; throw e; }
+    if (res.status === 401) { signOut(); throw new AuthRequiredError('Your Warcraft Logs sign-in expired. Sign in again.'); }
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.data && !data.errors && (!variables?.code || data.data.reportData?.report)) { apiUrl = url; return data.data; }
     lastErr = new Error(data.errors?.[0]?.message || `Warcraft Logs answered ${res.status}.`);
