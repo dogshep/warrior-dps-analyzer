@@ -162,13 +162,3 @@ log size and sim length. The deploy builds wowsims in a job with no secrets, as 
 ## License
 
 MIT, see [LICENSE](LICENSE). The addon folder carries its own copy (`addon/WarriorTips/LICENSE.txt`) so it ships with the download.
-
-## Code review with Claude Code
-
-`/code-review` (in `.claude/commands/code-review.md`) reviews a change with up to six reviewer subagents from `.claude/agents/` running in parallel: tests, security (Worker, Actions secrets, OAuth, CSP), sim performance, Forever availability, correctness (including the addon's secret-value rules) and deploy safety. It then checks the serious findings and writes one report with a verdict. Run it in Claude Code from the repo:
-
-```
-/code-review            # current branch vs main
-/code-review 35         # a pull request
-/code-review all        # every reviewer, not just the ones the diff touches
-```
