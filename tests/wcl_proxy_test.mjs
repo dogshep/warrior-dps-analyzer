@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 const { loadReport, loadFight, hasProxy } = await import('../web/js/wcl.js');
+const { AuthRequiredError } = await import('../web/js/errors.js');
 
 const sent = [];
 let reply = { status: 200, body: { data: { reportData: { report: { title: 'UBRS', fights: [], masterData: { actors: [], abilities: [] } } } } } };
@@ -17,13 +18,13 @@ assert.equal(rep.title, 'UBRS');
 assert.deepEqual(sent[0], { url: 'https://w.example.workers.dev', body: { op: 'report', variables: { code: '83cYV91DARnwWNaj' } }, auth: undefined });
 
 reply = { status: 404, body: { error: 'You do not have permission to view this report.' } };
-await assert.rejects(loadReport('AAAAAAAAAAAAAAAA', fetchImpl), e => e.needsAuth === true);
+await assert.rejects(loadReport('AAAAAAAAAAAAAAAA', fetchImpl), e => e instanceof AuthRequiredError);
 
 // Any other Worker failure is reported as it is, not as a sign-in problem.
 reply = { status: 502, body: { error: 'Variable "$actor" is never used.' } };
-await assert.rejects(loadReport('CCCCCCCCCCCCCCCC', fetchImpl), e => !e.needsAuth && /never used/.test(e.message));
+await assert.rejects(loadReport('CCCCCCCCCCCCCCCC', fetchImpl), e => !(e instanceof AuthRequiredError) && /never used/.test(e.message));
 reply = { status: 429, body: { error: 'rate limited' } };
-await assert.rejects(loadReport('DDDDDDDDDDDDDDDD', fetchImpl), e => e.needsAuth === true && /quota/.test(e.message));
+await assert.rejects(loadReport('DDDDDDDDDDDDDDDD', fetchImpl), e => e instanceof AuthRequiredError && /quota/.test(e.message));
 
 // A long fight: each events list pages on its own, gear comes from the first answer, and a second load is cached.
 const pages = { mine: 3, onMe: 2, debuffs: 1, deaths: 1, info: 1 };

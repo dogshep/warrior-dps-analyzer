@@ -3,6 +3,7 @@
 // Workers are started early (warm) so the engine is usually running before anyone presses Analyze.
 
 import { DEFAULT_ITERATIONS } from './sim-config.js';
+import { CancelledError } from './errors.js';
 
 // Workers to run side by side: one per spare CPU core, up to 4 (each one holds about 110 MB).
 export const THREADS = typeof navigator === 'undefined' ? 1 : Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
@@ -80,7 +81,7 @@ export function warm(n = THREADS, onDownload) {
 export function cancel() {
   for (const { w } of workers) w.terminate();
   workers.length = 0;
-  for (const p of pending.values()) { const e = new Error('Sim cancelled.'); e.cancelled = true; p.reject(e); }
+  for (const p of pending.values()) { p.reject(new CancelledError()); }
   pending.clear();
 }
 
